@@ -13,11 +13,12 @@ class Period {
   /// 结束时间，格式 `HH:mm`。
   final String end;
 
+  /// 防御式解析：字段缺失或类型不符时回退到默认值，绝不抛异常。
   factory Period.fromJson(Map<String, dynamic> json) {
     return Period(
-      index: json['index'] as int,
-      start: json['start'] as String,
-      end: json['end'] as String,
+      index: (json['index'] as int?) ?? 0,
+      start: (json['start'] as String?) ?? '',
+      end: (json['end'] as String?) ?? '',
     );
   }
 
