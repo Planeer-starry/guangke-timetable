@@ -46,3 +46,7 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# 码道生成的临时输出
+doctor_out.txt
+*.tmp
