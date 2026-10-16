@@ -118,13 +118,34 @@
     `flutter analyze` / `flutter test` 的**原始输出**。没运行就说没运行，
     不要编造结果。
 
-12. **Flutter / Dart 命令必须前台同步执行。**
-    禁止用 `nohup`、`&`、`disown` 把命令丢到后台，再靠 `sleep` + `cat` 猜结果——
-    这样你看不到真实输出，还可能因为并发争抢 **Flutter SDK 全局锁**而误判成「卡死」。
-    - 输出很长时重定向到文件再读：`flutter ... > out.txt 2>&1`，不要接 `head`
-    - 所有 flutter 命令建议固定带 `--no-version-check`
-    - 如果某条命令超过 2 分钟无任何输出，**停下来告诉我**，
-      并先检查是否已有其它 `flutter` / `dart` / `java` 进程在运行
+12. **Flutter / Dart 命令必须前台同步执行，而且必须绕开 POSIX shell 脚本。**
+
+    ⚠️ 你的 bash 沙箱**禁止创建命名管道**。而 `flutter` 和 `dart` 这两个
+    **POSIX shell 脚本**内部使用了 `$(...)` 命令替换 → 会直接报
+    `cannot make pipe for command substitution: Permission denied`，
+    然后整个命令卡死，看起来像「Flutter 卡了」。
+
+    **必须这样调用：**
+
+    ```bash
+    # ✅ 用 .bat / .exe（Windows 原生，不依赖 POSIX 管道）
+    E:/dev/flutter/bin/flutter.bat --no-version-check analyze
+    E:/dev/flutter/bin/flutter.bat --no-version-check test
+    E:/dev/flutter/bin/dart.exe format .
+
+    # ✅ 或者经 cmd 转发
+    cmd //c "flutter --no-version-check analyze"
+    ```
+
+    ```bash
+    # ❌ 下面这些在这个沙箱里会卡死，禁止使用
+    flutter --no-version-check analyze
+    dart format .
+    ```
+
+    - 输出很长时重定向到文件再读：`... > build/out.txt 2>&1`，不要接 `head`
+    - 命令超过 **5 分钟**无输出：**停下来告诉我**，不要反复重试、不要换着花样试
+    - 禁止 `nohup` / `&` / `disown` 把命令丢后台再用 `sleep` + `cat` 猜结果
 
 ---
 
