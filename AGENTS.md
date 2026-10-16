@@ -114,38 +114,49 @@
 
 10. **禁止修改本文件（AGENTS.md）。** 见文件顶部声明。
 
-11. **禁止跳过验证**。任何声称「已完成」的回复，必须同时给出
-    `flutter analyze` / `flutter test` 的**原始输出**。没运行就说没运行，
-    不要编造结果。
+11. **`flutter analyze` / `flutter test` / `flutter run` 由人类执行，你不要尝试运行。**
 
-12. **Flutter / Dart 命令必须前台同步执行，而且必须绕开 POSIX shell 脚本。**
+    ⚠️ 这几条命令会让 Flutter 以**管道 stdio** 启动子进程（`dart.exe`），
+    而你的沙箱禁止管道 → 命令会**永久挂起、零输出**，看起来像 Flutter 卡了。
+    已实测对比：
 
-    ⚠️ 你的 bash 沙箱**禁止创建命名管道**。而 `flutter` 和 `dart` 这两个
-    **POSIX shell 脚本**内部使用了 `$(...)` 命令替换 → 会直接报
-    `cannot make pipe for command substitution: Permission denied`，
-    然后整个命令卡死，看起来像「Flutter 卡了」。
+    | 命令 | 结果 |
+    |---|---|
+    | `dart.exe format .` | ✅ 能跑（不启子进程） |
+    | `flutter analyze` | ❌ 挂死，输出文件 0 字节 |
+    | `flutter --version` / `flutter.bat analyze` | ❌ 同上 |
 
-    **必须这样调用：**
+    **正确分工：**
+
+    - 你负责**写代码** + 用 `dart.exe format .` 格式化
+    - 写完在回复末尾给出这两条命令，**交给我在 PowerShell 里执行**：
+
+      ```
+      flutter --no-version-check analyze
+      flutter --no-version-check test
+      ```
+
+    - **等我把原始输出贴回来**，再根据真实结果判断是否通过、下一步做什么
+    - 🚫 **禁止**声称「已完成」「测试通过」「analyze 无 issue」——
+      你没有能力验证这些，编造或推测结果是最严重的违规
+
+12. **其它 Dart 命令：绕开 POSIX shell 脚本，且必须前台执行。**
+
+    `flutter` / `dart`（不带后缀）是 **POSIX shell 脚本**，内部用 `$(...)`
+    命令替换，在你的 bash 沙箱里会报
+    `cannot make pipe for command substitution: Permission denied` 并卡死。
+    需要用 Dart 工具时，调 `.exe`：
 
     ```bash
-    # ✅ 用 .bat / .exe（Windows 原生，不依赖 POSIX 管道）
-    E:/dev/flutter/bin/flutter.bat --no-version-check analyze
-    E:/dev/flutter/bin/flutter.bat --no-version-check test
     E:/dev/flutter/bin/dart.exe format .
-
-    # ✅ 或者经 cmd 转发
-    cmd //c "flutter --no-version-check analyze"
     ```
 
-    ```bash
-    # ❌ 下面这些在这个沙箱里会卡死，禁止使用
-    flutter --no-version-check analyze
-    dart format .
-    ```
+    另外：
 
-    - 输出很长时重定向到文件再读：`... > build/out.txt 2>&1`，不要接 `head`
-    - 命令超过 **5 分钟**无输出：**停下来告诉我**，不要反复重试、不要换着花样试
-    - 禁止 `nohup` / `&` / `disown` 把命令丢后台再用 `sleep` + `cat` 猜结果
+    - **禁止** `nohup` / `&` / `disown` 把命令丢后台，再用 `sleep` + `cat` 猜结果
+    - 输出可能很长时重定向到文件再读（`... > build/out.txt 2>&1`），不要接 `head`
+    - 任何命令超过 **3 分钟**无输出：**立刻停下来告诉我**，
+      不要反复重试，也不要换着花样试——把错误原文贴出来比多试十次有用
 
 ---
 
