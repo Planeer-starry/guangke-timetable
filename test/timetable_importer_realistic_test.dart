@@ -42,14 +42,46 @@ void main() {
 
   test('真实 20 周数据：两级聚合端到端正确', () {
     // 每门课：(名称, 节次, dayWeek, 教师, 地点, 上课周次集合, 是否用正方别名)
-    final List<(String, Object, int, String, String, Set<int>, bool)> courses =
-        <(String, Object, int, String, String, Set<int>, bool)>[
-      ('计算机网络', 3, 1, '张明', '教学楼A302', <int>{for (int w = 1; w <= 16; w++) w}, false),
-      ('操作系统', 5, 1, '李红', '教学楼B201', <int>{for (int w = 1; w <= 8; w++) w}, false),
-      ('高等数学', 1, 2, '王强', '实验楼C101', <int>{for (int w = 1; w <= 16; w++) w}, false),
+    final List<(String, Object, int, String, String, Set<int>, bool)>
+    courses = <(String, Object, int, String, String, Set<int>, bool)>[
+      (
+        '计算机网络',
+        3,
+        1,
+        '张明',
+        '教学楼A302',
+        <int>{for (int w = 1; w <= 16; w++) w},
+        false,
+      ),
+      (
+        '操作系统',
+        5,
+        1,
+        '李红',
+        '教学楼B201',
+        <int>{for (int w = 1; w <= 8; w++) w},
+        false,
+      ),
+      (
+        '高等数学',
+        1,
+        2,
+        '王强',
+        '实验楼C101',
+        <int>{for (int w = 1; w <= 16; w++) w},
+        false,
+      ),
       ('大学英语', 3, 2, '陈静', '逸夫楼D203', <int>{2, 4, 6, 8, 10, 12, 14, 16}, false),
       // 正方写法：jcs = "3-4" 必须展开成第 3、4 节（连堂）
-      ('数据结构', '3-4', 3, '刘伟', '计算机楼E101', <int>{for (int w = 1; w <= 16; w++) w}, true),
+      (
+        '数据结构',
+        '3-4',
+        3,
+        '刘伟',
+        '计算机楼E101',
+        <int>{for (int w = 1; w <= 16; w++) w},
+        true,
+      ),
       ('体育', 7, 3, '赵磊', '田径场', <int>{1, 3, 5, 7, 9, 11, 13, 15}, false),
     ];
 
@@ -113,9 +145,11 @@ void main() {
     final Course net = find('计算机网络');
     expect(net.sectionStart, 3);
     expect(net.sectionEnd, 4, reason: '3、4 节是连堂，应合并');
-    expect(net.weekMask, weekMaskFromWeeks(<int>{
-      for (int w = 1; w <= 16; w++) w,
-    }), reason: '1-16 周 → 0xFFFF');
+    expect(
+      net.weekMask,
+      weekMaskFromWeeks(<int>{for (int w = 1; w <= 16; w++) w}),
+      reason: '1-16 周 → 0xFFFF',
+    );
 
     // ── 正方 jcs 范围写法必须展开成连堂 ──
     final Course ds = find('数据结构');
@@ -124,17 +158,27 @@ void main() {
 
     // ── 单周 / 双周 ──
     final Course english = find('大学英语');
-    expect(
-      weeksFromWeekMask(english.weekMask),
-      <int>[2, 4, 6, 8, 10, 12, 14, 16],
-      reason: '双周',
-    );
+    expect(weeksFromWeekMask(english.weekMask), <int>[
+      2,
+      4,
+      6,
+      8,
+      10,
+      12,
+      14,
+      16,
+    ], reason: '双周');
     final Course pe = find('体育');
-    expect(
-      weeksFromWeekMask(pe.weekMask),
-      <int>[1, 3, 5, 7, 9, 11, 13, 15],
-      reason: '单周',
-    );
+    expect(weeksFromWeekMask(pe.weekMask), <int>[
+      1,
+      3,
+      5,
+      7,
+      9,
+      11,
+      13,
+      15,
+    ], reason: '单周');
 
     // ── 字段别名（正方写法）解析正确 ──
     expect(ds.teacher, '刘伟');

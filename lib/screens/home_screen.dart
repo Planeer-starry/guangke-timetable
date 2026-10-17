@@ -13,6 +13,7 @@ import 'package:timetable/screens/import_preview_screen.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/timetable_importer.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/utils/week_math.dart';
@@ -39,22 +40,32 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final ValueNotifier<TimetableData> _data;
   late final ValueNotifier<int> _displayWeek;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _data = ValueNotifier<TimetableData>(widget.initialData);
     _displayWeek = ValueNotifier<int>(_initialWeek(widget.initialData));
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _data.dispose();
     _displayWeek.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // App 从后台恢复（如早上打开）：立即重算并刷新小组件
+      WidgetService.refreshNextClass(_data.value);
+    }
   }
 
   /// 当前周次：优先用户固定（weekOverride），否则由日历计算。
@@ -114,6 +125,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     _data.value = updated;
     _displayWeek.value = _effectiveWeek(updated);
+    WidgetService.refreshNextClass(updated);
   }
 
   // ───────────────────────── 导入流程 ─────────────────────────
@@ -253,6 +265,7 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     _data.value = updated;
+    WidgetService.refreshNextClass(updated);
     if (!current.semesterConfigured && mounted) {
       // 导入成功但学期未配置：明确提示并引导设置，避免用户误以为导入失败
       ScaffoldMessenger.of(context).showSnackBar(

@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/screens/home_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/widget_service.dart';
 
 /// 应用入口。
 ///
@@ -14,6 +17,8 @@ Future<void> main() async {
   final StorageService storage = await StorageService.forApp();
   final SettingsService settings = await SettingsService.forApp();
   final TimetableData data = await storage.load();
+  // 启动即同步一次小组件数据（精确闹钟可用性只提示，不阻塞启动）
+  unawaited(WidgetService.refreshNextClass(data));
   runApp(TimetableApp(initialData: data, storage: storage, settings: settings));
 }
 
