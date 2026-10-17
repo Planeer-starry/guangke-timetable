@@ -22,7 +22,9 @@ Future<void> main() async {
   runApp(TimetableApp(initialData: data, storage: storage, settings: settings));
 }
 
-class TimetableApp extends StatelessWidget {
+/// 根组件：监听 [SettingsService.themeModeListenable]，
+/// 让 MaterialApp.themeMode 随用户在设置页的选择即时切换。
+class TimetableApp extends StatefulWidget {
   const TimetableApp({
     super.key,
     required this.initialData,
@@ -33,6 +35,32 @@ class TimetableApp extends StatelessWidget {
   final TimetableData initialData;
   final StorageService storage;
   final SettingsService settings;
+
+  @override
+  State<TimetableApp> createState() => _TimetableAppState();
+}
+
+class _TimetableAppState extends State<TimetableApp> {
+  late ThemeMode _themeMode;
+
+  @override
+  void initState() {
+    super.initState();
+    _themeMode = _themeModeOf(widget.settings.themeMode);
+    widget.settings.themeModeListenable.addListener(_onThemeModeChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.settings.themeModeListenable.removeListener(_onThemeModeChanged);
+    super.dispose();
+  }
+
+  void _onThemeModeChanged() {
+    setState(() {
+      _themeMode = _themeModeOf(widget.settings.themeModeListenable.value);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,17 +77,17 @@ class TimetableApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      themeMode: _themeModeOf(settings.themeMode),
+      themeMode: _themeMode,
       home: HomeScreen(
-        initialData: initialData,
-        storage: storage,
-        settings: settings,
+        initialData: widget.initialData,
+        storage: widget.storage,
+        settings: widget.settings,
       ),
     );
   }
 
   /// 'system' / 'light' / 'dark' → ThemeMode。
-  ThemeMode _themeModeOf(String mode) {
+  static ThemeMode _themeModeOf(String mode) {
     switch (mode) {
       case 'light':
         return ThemeMode.light;

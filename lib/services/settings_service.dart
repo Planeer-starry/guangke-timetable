@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// UI 偏好设置（shared_preferences）。
@@ -7,9 +8,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// `timetable.json` 的 `meta`，**禁止**在这里另存一份。
 /// 这里只放 UI 偏好（当前查看周次、主题模式）。
 class SettingsService {
-  SettingsService(this._prefs);
+  SettingsService(this._prefs)
+    : _themeModeNotifier = ValueNotifier<String>(
+        _prefs.getString(_keyThemeMode) ?? 'system',
+      );
 
   final SharedPreferences _prefs;
+  final ValueNotifier<String> _themeModeNotifier;
 
   /// App 运行时便利工厂；测试请直接构造并传 mock 实例
   /// （`SharedPreferences.setMockInitialValues({})`）。
@@ -36,8 +41,12 @@ class SettingsService {
   /// 主题模式：`system`（跟随系统）/ `light` / `dark`。
   String get themeMode => _prefs.getString(_keyThemeMode) ?? 'system';
 
-  /// 写入主题模式。
+  /// 主题模式的变化通知；MaterialApp 监听它随动切换 themeMode。
+  ValueListenable<String> get themeModeListenable => _themeModeNotifier;
+
+  /// 写入主题模式（同时落盘 prefs 并广播通知）。
   Future<void> setThemeMode(String mode) async {
     await _prefs.setString(_keyThemeMode, mode);
+    _themeModeNotifier.value = mode;
   }
 }

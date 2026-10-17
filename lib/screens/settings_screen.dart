@@ -1,22 +1,18 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'package:timetable/constants/app_config.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/models/update_info.dart';
+import 'package:timetable/screens/import_flow.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
-import 'package:timetable/services/apk_installer.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
-import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
+import 'package:timetable/widgets/update_section.dart';
 
-/// 设置页（基础版）：学期参数入口 + 关于 + 应用内更新。
-///
-/// 外观（主题切换）、课表管理（清空课表）等分组在后续任务再补，
-/// 本页先保证「检查更新」完整可用。
+/// 设置页：学期 / 外观 / 课表 / 关于 / 更新。
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     super.key,
@@ -37,34 +33,22 @@ class SettingsScreen extends StatefulWidget {
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-/// 检查更新的状态机：idle → checking → upToDate / newVersion / error。
-enum _UpdateStatus { idle, checking, upToDate, newVersion, error }
-
 class _SettingsScreenState extends State<SettingsScreen> {
-  _UpdateStatus _status = _UpdateStatus.idle;
-  UpdateInfo? _updateInfo;
-
   String _appVersion = '';
   int _versionCode = 0;
   String _packageName = '';
 
-  final ValueNotifier<double> _downloadProgress = ValueNotifier<double>(0);
-  bool _downloading = false;
+  /// 主题模式的显示文案（存储值 → 中文）。
+  static const Map<String, String> _themeModeLabels = <String, String>{
+    'system': '跟随系统',
+    'light': '浅色',
+    'dark': '深色',
+  };
 
   @override
   void initState() {
     super.initState();
-    _updateInfo = widget.initialUpdate;
-    _status = widget.initialUpdate == null
-        ? _UpdateStatus.idle
-        : _UpdateStatus.newVersion;
     _loadPackageInfo();
-  }
-
-  @override
-  void dispose() {
-    _downloadProgress.dispose();
-    super.dispose();
   }
 
   Future<void> _loadPackageInfo() async {
@@ -97,65 +81,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
     WidgetService.refreshNextClass(updated);
   }
 
-  /// 主动检查更新：绕过缓存重新拉 version.json，失败给出可见提示。
-  Future<void> _checkUpdate() async {
-    setState(() => _status = _UpdateStatus.checking);
-    try {
-      final UpdateInfo fetched = await UpdateService.fetchUpdateInfo(
-        forceRefresh: true,
-      );
-      if (!mounted) {
-        return;
-      }
-      final UpdateInfo? result = UpdateService.evaluateUpdate(
-        fetched,
-        _versionCode,
-        _packageName,
-      );
-      setState(() {
-        _updateInfo = result;
-        _status = result == null
-            ? _UpdateStatus.upToDate
-            : _UpdateStatus.newVersion;
-      });
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() => _status = _UpdateStatus.error);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('检查更新失败：$error')));
-    }
-  }
-
-  /// 下载 APK（边下边校验 sha256）→ 拉起系统安装器。
-  Future<void> _downloadAndInstall() async {
-    final UpdateInfo? info = _updateInfo;
-    if (info == null || _downloading) {
+  /// 外观：底部弹窗三选一（跟随系统 / 浅色 / 深色）。
+  Future<void> _pickThemeMode(BuildContext context, String current) async {
+    final String? picked = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            for (final MapEntry<String, String> option
+                in _themeModeLabels.entries)
+              ListTile(
+                title: Text(option.value),
+                trailing: option.key == current
+                    ? const Icon(Icons.check)
+                    : null,
+                onTap: () => Navigator.of(sheetContext).pop(option.key),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (picked == null || picked == current) {
       return;
     }
-    setState(() => _downloading = true);
-    _downloadProgress.value = 0;
+    await widget.settings.setThemeMode(picked);
+  }
+
+  /// 清空课表：危险操作，二次确认后全量重置（含学期设置）。
+  Future<void> _confirmClearTimetable() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('清空课表'),
+        content: const Text('将删除本机保存的全部课程和调课记录，学期设置也会被重置。此操作不可恢复，确定清空吗？'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final TimetableData cleared = TimetableData.empty();
     try {
-      final File file = await UpdateService.downloadApk(
-        info,
-        onProgress: (double progress) => _downloadProgress.value = progress,
-      );
-      final bool started = await ApkInstaller.installApk(file.path);
-      if (!started && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('没能拉起安装器：请先允许本应用「安装未知应用」再重试')),
-        );
-      }
+      await widget.storage.save(cleared);
     } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('下载失败：$error')));
+      if (!mounted) {
+        return;
       }
-    } finally {
-      if (mounted) {
-        setState(() => _downloading = false);
-      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('清空失败：$error')));
+      return;
+    }
+    widget.data.value = cleared;
+    WidgetService.refreshNextClass(cleared);
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('课表已清空')));
     }
   }
 
@@ -168,8 +158,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         children: <Widget>[
           _buildSemesterSection(context),
           const Divider(height: 24, indent: 16, endIndent: 16),
+          _buildAppearanceSection(context),
+          const Divider(height: 24, indent: 16, endIndent: 16),
+          _buildTimetableSection(context),
+          const Divider(height: 24, indent: 16, endIndent: 16),
           _buildAboutSection(context),
-          _buildUpdateSection(context),
+          // updateInfoUrl 为空（未配置托管地址）时整组隐藏，
+          // 避免用户点了一个必然失败的按钮
+          if (isUpdateEnabled) ...<Widget>[
+            _sectionTitle(context, '更新'),
+            UpdateSection(initialUpdate: widget.initialUpdate),
+          ],
         ],
       ),
     );
@@ -205,7 +204,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return '第一周周一：${_formatDate(meta.week1Monday)} · 共 ${meta.totalWeeks} 周';
   }
 
-  // ───────────────────────── 关于与更新 ─────────────────────────
+  // ───────────────────────── 外观 ─────────────────────────
+
+  Widget _buildAppearanceSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _sectionTitle(context, '外观'),
+        ValueListenableBuilder<String>(
+          valueListenable: widget.settings.themeModeListenable,
+          builder: (BuildContext context, String mode, _) => ListTile(
+            leading: const Icon(Icons.palette),
+            title: const Text('主题'),
+            subtitle: Text(_themeModeLabels[mode] ?? '跟随系统'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _pickThemeMode(context, mode),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ───────────────────────── 课表 ─────────────────────────
+
+  Widget _buildTimetableSection(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _sectionTitle(context, '课表'),
+        ListTile(
+          leading: const Icon(Icons.upload_file),
+          title: const Text('导入课表'),
+          subtitle: const Text('从 JSON 文件或剪贴板导入，将替换当前课表'),
+          onTap: () => startImportFlow(
+            context,
+            storage: widget.storage,
+            data: widget.data,
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.delete_outline),
+          title: const Text('清空课表'),
+          subtitle: const Text('删除本机保存的全部课程，不可恢复'),
+          onTap: _confirmClearTimetable,
+        ),
+      ],
+    );
+  }
+
+  // ───────────────────────── 关于 ─────────────────────────
 
   Widget _buildAboutSection(BuildContext context) {
     return Column(
@@ -219,53 +266,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ? null
               : Text('$_appVersion（build $_versionCode）'),
         ),
-      ],
-    );
-  }
-
-  Widget _buildUpdateSection(BuildContext context) {
-    final bool checking = _status == _UpdateStatus.checking;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _sectionTitle(context, '更新'),
         ListTile(
-          leading: const Icon(Icons.system_update),
-          title: const Text('检查更新'),
-          subtitle: Text(_updateSubtitle()),
-          trailing: checking
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.refresh),
-          onTap: checking ? null : _checkUpdate,
-        ),
-        if (_status == _UpdateStatus.newVersion && _updateInfo != null)
-          _NewVersionCard(
-            info: _updateInfo!,
-            progress: _downloadProgress,
-            downloading: _downloading,
-            onInstall: _downloadAndInstall,
+          leading: const Icon(Icons.code),
+          title: const Text('包名'),
+          subtitle: Text(
+            _packageName.isEmpty ? 'com.planeer.timetable' : _packageName,
           ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Text(
+            '所有数据仅保存在本机，不上传任何信息',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
       ],
     );
-  }
-
-  String _updateSubtitle() {
-    switch (_status) {
-      case _UpdateStatus.idle:
-        return '点此检查是否有新版本';
-      case _UpdateStatus.checking:
-        return '正在检查…';
-      case _UpdateStatus.upToDate:
-        return '已是最新版本';
-      case _UpdateStatus.newVersion:
-        return '发现新版本 ${_updateInfo?.versionName ?? ''}';
-      case _UpdateStatus.error:
-        return '检查失败，点此重试';
-    }
   }
 
   // ───────────────────────── 小部件 ─────────────────────────
@@ -287,72 +303,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final String month = date.month.toString().padLeft(2, '0');
     final String day = date.day.toString().padLeft(2, '0');
     return '${date.year}-$month-$day';
-  }
-}
-
-/// 新版本信息卡片：版本号、大小、更新说明、下载进度与安装按钮。
-class _NewVersionCard extends StatelessWidget {
-  const _NewVersionCard({
-    required this.info,
-    required this.progress,
-    required this.downloading,
-    required this.onInstall,
-  });
-
-  final UpdateInfo info;
-  final ValueNotifier<double> progress;
-
-  /// 是否正在下载；true 时显示进度条，false 显示「下载并安装」按钮。
-  final bool downloading;
-  final VoidCallback onInstall;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Row(
-              children: <Widget>[
-                Expanded(
-                  child: Text(
-                    '新版本 ${info.versionName}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-                if (info.size > 0)
-                  Text('${(info.size / 1024 / 1024).toStringAsFixed(1)} MB'),
-              ],
-            ),
-            if (info.releaseNotes.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 8),
-              for (final String note in info.releaseNotes)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 2),
-                  child: Text('· $note'),
-                ),
-            ],
-            const SizedBox(height: 12),
-            if (downloading)
-              ValueListenableBuilder<double>(
-                valueListenable: progress,
-                builder: (BuildContext context, double value, _) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    LinearProgressIndicator(value: value <= 0 ? null : value),
-                    const SizedBox(height: 4),
-                    Text('正在下载… ${(value * 100).toStringAsFixed(0)}%'),
-                  ],
-                ),
-              )
-            else
-              FilledButton(onPressed: onInstall, child: const Text('下载并安装')),
-          ],
-        ),
-      ),
-    );
   }
 }

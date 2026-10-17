@@ -33,4 +33,26 @@ void main() {
     await settings.setThemeMode('dark');
     expect(settings.themeMode, 'dark');
   });
+
+  test('themeModeListenable 初始值与 prefs 里的一致', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'theme_mode': 'dark',
+    });
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final SettingsService settings = SettingsService(prefs);
+    expect(settings.themeModeListenable.value, 'dark');
+  });
+
+  test('setThemeMode 同时落盘 prefs 并广播通知', () async {
+    final SettingsService settings = await newSettings();
+    expect(settings.themeModeListenable.value, 'system');
+    final List<String> received = <String>[];
+    settings.themeModeListenable.addListener(
+      () => received.add(settings.themeModeListenable.value),
+    );
+    await settings.setThemeMode('light');
+    expect(settings.themeMode, 'light');
+    expect(settings.themeModeListenable.value, 'light');
+    expect(received, <String>['light']);
+  });
 }
