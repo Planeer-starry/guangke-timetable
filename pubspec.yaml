@@ -49,6 +49,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -91,3 +92,16 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+# ─────────────────────────── 应用图标生成 ───────────────────────────
+# 用 `dart run flutter_launcher_icons` 生成 android 各密度图标。
+# 源图：assets/icon/app_icon.png（1024×1024，课表网格 + 高亮课程）
+# 注意：不要手改 android/app/src/main/res/mipmap-* 下的 PNG，一律用工具生成。
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 24
+  # Android 8+ 自适应图标：网格占画面 62%，在安全区（中心 66.7%）内不会被裁
+  adaptive_icon_background: "#3F51B5"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
