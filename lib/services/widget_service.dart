@@ -2,6 +2,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/utils/next_class.dart';
 import 'package:timetable/utils/today_classes.dart';
+import 'package:timetable/utils/week_grid_model.dart';
 
 /// 桌面小组件数据同步（封装 home_widget，UI 层不直接碰它的 API）。
 ///
@@ -19,10 +20,15 @@ class WidgetService {
   /// 「今日课程」Android 侧 AppWidgetProvider 类名。
   static const String todayProviderName = 'TodayWidgetProvider';
 
+  /// 「一周总课表」Android 侧 AppWidgetProvider 类名。
+  static const String weekProviderName = 'WeekWidgetProvider';
+
   static const String _keyNextItems = 'next_items';
   static const String _keyNextEmptyText = 'next_empty_text';
   static const String _keyTodayDays = 'today_days';
   static const String _keyTodayEmptyText = 'today_empty_text';
+  static const String _keyWeekGrids = 'week_grids';
+  static const String _keyWeekEmptyText = 'week_empty_text';
 
   /// 重新计算候选并同步「下节课」小组件。
   ///
@@ -83,7 +89,8 @@ class WidgetService {
     await HomeWidget.updateWidget(androidName: todayProviderName);
   }
 
-  /// 一次刷新「下节课」+「今日课程」两个小组件（App 内所有数据变更点用它）。
+  /// 一次刷新「下节课」+「今日课程」+「一周总课表」三个小组件
+  /// （App 内所有数据变更点用它）。
   static Future<void> refreshAll(
     TimetableData data, {
     DateTime? now,
@@ -91,6 +98,52 @@ class WidgetService {
   }) async {
     await refreshNextClass(data, now: now, schedule: schedule);
     await refreshToday(data, now: now, schedule: schedule);
+    await refreshWeek(data, now: now, schedule: schedule);
+  }
+
+  /// 重新计算未来 3 周网格并同步「一周总课表」小组件。
+  ///
+  /// 存 3 周快照而非只存本周：跨周 0 点触发的是 Kotlin 的 onUpdate
+  /// （不重跑 Dart），按日期挑周才能跨周自动正确——否则下周一凌晨
+  /// 组件会一直显示上一周的课表。
+  static Future<void> refreshWeek(
+    TimetableData data, {
+    DateTime? now,
+    bool schedule = true,
+  }) async {
+    final DateTime at = now ?? DateTime.now();
+    final List<WeekSnapshot> snapshots = weekSnapshots(data, at);
+    await HomeWidget.saveWidgetData<String>(
+      _keyWeekGrids,
+      weekGridsEncode(snapshots),
+    );
+    // 空状态（Kotlin 找不到本周快照 / 本周全空时显示）：
+    // 学期未配置 → 「请先设置学期」；已配置 → 「本周没有课」。
+    await HomeWidget.saveWidgetData<String>(
+      _keyWeekEmptyText,
+      data.semesterConfigured ? '本周没有课' : '请先设置学期',
+    );
+    if (schedule) {
+      await HomeWidget.scheduleWidgetUpdates(
+        _mondayMidnightTimes(at),
+        androidName: weekProviderName,
+      );
+    }
+    await HomeWidget.updateWidget(androidName: weekProviderName);
+  }
+
+  /// 「一周总课表」的定时刷新时刻：未来 3 个周一 0 点（跨周切快照）。
+  /// 本周一 0 点已过去，home_widget 会忽略过去时刻。
+  static List<DateTime> _mondayMidnightTimes(DateTime now) {
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    int daysToNextMonday = (DateTime.monday - today.weekday + 7) % 7;
+    if (daysToNextMonday == 0) {
+      daysToNextMonday = 7; // 今天是周一：今天 0 点已过，从下周一起
+    }
+    return List<DateTime>.generate(
+      3,
+      (int i) => today.add(Duration(days: daysToNextMonday + 7 * i)),
+    );
   }
 
   /// 「今日课程」的定时刷新时刻：未来 7 天每个 0 点（跨天切组）。

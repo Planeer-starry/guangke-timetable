@@ -13,4 +13,6 @@
     <color name="widget_grid_empty">#0F5C6B73</color>
     <!-- 分隔线（1dp 高 TextView 用） -->
     <color name="widget_divider">#1F5C6B73</color>
+    <!-- 一周总课表：格内文字（背景是课程色，深浅主题下都用白） -->
+    <color name="widget_cell_text">#FFFFFF</color>
 </resources>

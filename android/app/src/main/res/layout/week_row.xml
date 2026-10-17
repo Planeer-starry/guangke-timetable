@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「一周总课表」的一行：节次标签 + 7 格容器（Kotlin 动态 addView）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="0dp"
+    android:layout_weight="1"
+    android:orientation="horizontal"
+    android:gravity="center_vertical">
+
+    <TextView
+        android:id="@+id/row_label"
+        android:layout_width="32dp"
+        android:layout_height="wrap_content"
+        android:textSize="@dimen/widget_grid_cell_size"
+        android:textColor="@color/widget_sub"
+        android:gravity="center"
+        android:maxLines="1" />
+
+    <LinearLayout
+        android:id="@+id/week_cells"
+        android:layout_width="0dp"
+        android:layout_height="match_parent"
+        android:layout_weight="1"
+        android:orientation="horizontal" />
+</LinearLayout>

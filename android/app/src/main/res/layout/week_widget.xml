@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「一周总课表」小组件根布局（6×4）。结构与另两个小组件同一设计语言：
+     widget_card_bg 背景 + widget_padding 内边距；分隔线用高 1dp 的 TextView
+     （RemoteViews 白名单里没有 <View>）。
+     5 行网格由 Kotlin 用 addView(R.id.week_rows, rowRv) 动态填充。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/week_widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_card_bg"
+    android:padding="@dimen/widget_padding">
+
+    <!-- 表头：周次占位格 + 7 个星期格（Kotlin 填「一\n10/12」，今天列高亮） -->
+    <LinearLayout
+        android:id="@+id/week_header_row"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:id="@+id/week_header_label"
+            android:layout_width="32dp"
+            android:layout_height="wrap_content"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/week_head_mon"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/week_head_tue"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/week_head_wed"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/week_head_thu"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/week_head_fri"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/week_head_sat"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+
+        <TextView
+            android:id="@+id/week_head_sun"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:textSize="@dimen/widget_grid_cell_size"
+            android:textColor="@color/widget_sub"
+            android:gravity="center" />
+    </LinearLayout>
+
+    <!-- 分隔线（1dp 高 TextView，不用 <View>） -->
+    <TextView
+        android:id="@+id/week_divider"
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:background="@color/widget_divider" />
+
+    <!-- 主体区：垂直居中、内容左对齐（空态语言与另两个组件一致） -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center_vertical|start">
+
+        <!-- 5 行网格（Kotlin 动态 addView） -->
+        <LinearLayout
+            android:id="@+id/week_rows"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical" />
+
+        <!-- 空状态：左对齐单行主文案 -->
+        <TextView
+            android:id="@+id/week_empty"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="@dimen/widget_title_size"
+            android:textStyle="bold"
+            android:textColor="@color/widget_title"
+            android:maxLines="1"
+            android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

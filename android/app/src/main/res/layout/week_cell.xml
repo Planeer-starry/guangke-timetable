@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「一周总课表」的单个格子：margin 1dp 留缝（网格感来自间隙），
+     底色由 Kotlin 按课程色 / widget_grid_empty 设置。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/cell_root"
+    android:layout_width="0dp"
+    android:layout_height="match_parent"
+    android:layout_weight="1"
+    android:layout_margin="1dp"
+    android:orientation="vertical"
+    android:background="@drawable/widget_cell_bg"
+    android:padding="2dp"
+    android:gravity="center">
+
+    <TextView
+        android:id="@+id/cell_text"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="@dimen/widget_grid_cell_size"
+        android:textColor="@color/widget_cell_text"
+        android:gravity="center"
+        android:maxLines="2"
+        android:ellipsize="end" />
+
+    <TextView
+        android:id="@+id/cell_extra"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="@dimen/widget_cell_extra_size"
+        android:textColor="@color/widget_cell_text"
+        android:gravity="end"
+        android:maxLines="1"
+        android:visibility="gone" />
+</LinearLayout>

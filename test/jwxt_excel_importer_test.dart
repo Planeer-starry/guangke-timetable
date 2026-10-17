@@ -147,10 +147,9 @@ void main() {
       expect(course.dayWeek, 1);
       expect(course.sectionStart, 3);
       expect(course.sectionEnd, 4);
-      expect(
-        weeksFromWeekMask(course.weekMask),
-        {for (int i = 1; i <= 16; i++) i},
-      );
+      expect(weeksFromWeekMask(course.weekMask), {
+        for (int i = 1; i <= 16; i++) i,
+      });
     });
 
     test('周二分班多课：两条独立课程（军事理论 / 大学生创新教育Ⅰ）', () {
@@ -185,10 +184,9 @@ void main() {
           .where((Course c) => c.name == '数据结构')
           .toList();
       expect(ds, hasLength(1));
-      expect(
-        weeksFromWeekMask(ds.single.weekMask),
-        {for (int i = 1; i <= 16; i++) i},
-      );
+      expect(weeksFromWeekMask(ds.single.weekMask), {
+        for (int i = 1; i <= 16; i++) i,
+      });
     });
 
     test('找不到表头行 → 报错不抛', () {
