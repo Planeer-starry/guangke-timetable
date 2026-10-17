@@ -88,7 +88,7 @@ class TimetableData {
   /// 「学期未设置」的元信息：周次基准取 [unsetWeek1Monday]。
   static TimetableMeta _unsetMeta() {
     return TimetableMeta(
-      school: '',
+      school: '广东科技学院',
       semesterName: '',
       week1Monday: unsetWeek1Monday,
       totalWeeks: 20,
@@ -111,7 +111,7 @@ class TimetableData {
       week1Monday = unsetWeek1Monday;
     }
     return TimetableMeta(
-      school: (map['school'] as String?) ?? '',
+      school: (map['school'] as String?) ?? '广东科技学院',
       semesterName: (map['semesterName'] as String?) ?? '',
       week1Monday: week1Monday,
       totalWeeks: (map['totalWeeks'] as int?) ?? 20,
