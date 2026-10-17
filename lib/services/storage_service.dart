@@ -1,0 +1,105 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:timetable/models/timetable_data.dart';
+
+/// 课表文件读写服务。
+///
+/// 目录必须从构造函数注入（便于单测改用临时目录，见 AGENTS.md 5.1）；
+/// App 运行时用 [forApp] 便利工厂走 `path_provider`。
+/// 禁止在本类内部直接调用 `getApplicationDocumentsDirectory()`。
+class StorageService {
+  StorageService({required Directory directory}) : _dir = directory;
+
+  final Directory _dir;
+
+  /// 课表文件名。
+  static const String fileName = 'timetable.json';
+
+  /// 便利工厂：取应用文档目录。仅供 App 运行时使用，测试请用构造函数注入。
+  static Future<StorageService> forApp() async {
+    final Directory dir = await getApplicationDocumentsDirectory();
+    return StorageService(directory: dir);
+  }
+
+  File get _file => File('${_dir.path}${Platform.pathSeparator}$fileName');
+
+  /// 读取课表。
+  ///
+  /// 文件不存在或解析失败都**不抛异常**，返回空课表；
+  /// 解析失败时把损坏文件重命名为 `timetable.json.corrupt.<毫秒时间戳>`，
+  /// 不静默丢弃，用户可能还能救回来。
+  Future<TimetableData> load() async {
+    final File file = _file;
+    if (!await file.exists()) {
+      return TimetableData.empty();
+    }
+    try {
+      final String content = await file.readAsString();
+      final Object? decoded = jsonDecode(content);
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('课表文件顶层不是 JSON 对象');
+      }
+      return TimetableData.fromJson(decoded);
+    } catch (error, stackTrace) {
+      debugPrint('课表文件解析失败，已备份损坏文件：$error\n$stackTrace');
+      await _backupCorruptFile(file);
+      return TimetableData.empty();
+    }
+  }
+
+  /// 把损坏的课表文件重命名保留；重命名失败也不影响返回空课表。
+  Future<void> _backupCorruptFile(File file) async {
+    try {
+      final String stamp = DateTime.now().millisecondsSinceEpoch.toString();
+      await file.rename('${file.path}.corrupt.$stamp');
+    } catch (error) {
+      debugPrint('损坏文件备份失败：$error');
+    }
+  }
+
+  /// 保存课表（原子写）。
+  ///
+  /// 流程：
+  /// 1. 完整 JSON 先写**同目录**临时文件 `timetable.json.tmp` 并 flush
+  ///    （同目录保证 rename 不跨分区，这是原子性的前提）；
+  /// 2. 目标已存在时先把它 rename 成 `timetable.json.bak`
+  ///    （Windows 上 rename 到已存在的目标可能失败）；
+  /// 3. `tmp` rename 成目标；若失败则把 `.bak` 改回（回滚，旧数据不丢）再抛错；
+  /// 4. 成功后删除 `.bak`。
+  ///
+  /// 任何时刻 `timetable.json` 要么是旧的完整文件、要么是新的完整文件。
+  Future<void> save(TimetableData data) async {
+    final File file = _file;
+    final File tmp = File('${file.path}.tmp');
+    final File bak = File('${file.path}.bak');
+    final String content = const JsonEncoder.withIndent('  ')
+        .convert(data.toJson());
+    await tmp.writeAsString(content, flush: true);
+
+    final bool hasOld = await file.exists();
+    if (hasOld) {
+      if (await bak.exists()) {
+        await bak.delete();
+      }
+      await file.rename(bak.path);
+    }
+    try {
+      await tmp.rename(file.path);
+    } catch (error) {
+      if (hasOld && await bak.exists()) {
+        try {
+          await bak.rename(file.path);
+        } catch (rollbackError) {
+          debugPrint('课表文件回滚失败：$rollbackError');
+        }
+      }
+      rethrow;
+    }
+    if (hasOld && await bak.exists()) {
+      await bak.delete();
+    }
+  }
+}
