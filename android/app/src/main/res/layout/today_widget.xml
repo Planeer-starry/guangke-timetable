@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「今日课程」小组件根布局。只允许 LinearLayout / TextView / ImageView；
+     行内容由 Kotlin 用 RemoteViews.addView(R.id.today_rows, …) 动态填充 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/today_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="@drawable/widget_today_bg"
+    android:padding="12dp">
+
+    <!-- 表头：日期 · 周次（列表态显示） -->
+    <TextView
+        android:id="@+id/today_header"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:textColor="#49454E"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:visibility="gone" />
+
+    <!-- 课程行容器（Kotlin 动态 addView） -->
+    <LinearLayout
+        android:id="@+id/today_rows"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="vertical"
+        android:visibility="gone" />
+
+    <!-- 空状态：图标 + 主文案 + 小字提示，weight=1 垂直居中 -->
+    <LinearLayout
+        android:id="@+id/today_empty"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/empty_icon"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:src="@drawable/ic_widget_empty"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/empty_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="#1D1B20" />
+
+        <TextView
+            android:id="@+id/empty_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:textSize="11sp"
+            android:textColor="#49454E" />
+    </LinearLayout>
+</LinearLayout>

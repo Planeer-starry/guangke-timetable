@@ -61,4 +61,47 @@ void main() {
       expect(data.periods.last.end, '21:05');
     });
   });
+
+  group('semesterConfigured 与哨兵值（回归：存盘往返不能误判）', () {
+    // 曾经的 bug：unsetWeek1Monday 是 DateTime.utc(1,1,1)，而 toJson 存的是
+    // 不带时区的 "0001-01-01"，DateTime.parse 按本地时区解析出 DateTime(1,1,1)，
+    // 两者相差一个时区偏移、并不相等 → 存盘再读之后「未配置」被误判成「已配置」，
+    // 于是用公元 1 年算周次（截断成第 20 周），首页显示空课表且不提示设置学期。
+    test('内存中的 empty → 未配置', () {
+      expect(TimetableData.empty().semesterConfigured, isFalse);
+    });
+
+    test('empty 存盘再读回来 → 仍然是未配置', () {
+      final TimetableData restored = TimetableData.fromJson(
+        TimetableData.empty().toJson(),
+      );
+      expect(restored.semesterConfigured, isFalse);
+      expect(restored.meta.week1Monday, TimetableData.unsetWeek1Monday);
+    });
+
+    test('JSON 里写 "0001-01-01" → 归一成哨兵值、未配置', () {
+      final Map<String, dynamic> raw =
+          TimetableData.empty().toJson().cast<String, dynamic>();
+      (raw['meta'] as Map<String, dynamic>)['week1Monday'] = '0001-01-01';
+      final TimetableData restored = TimetableData.fromJson(raw);
+      expect(restored.semesterConfigured, isFalse);
+      expect(restored.meta.week1Monday, TimetableData.unsetWeek1Monday);
+    });
+
+    test('正常学期日期 → 已配置，且日期不丢', () {
+      final TimetableData restored = TimetableData.fromJson(<String, dynamic>{
+        'schema': 1,
+        'meta': <String, dynamic>{
+          'school': '广东科技学院',
+          'semesterName': '2026-2027 第一学期',
+          'week1Monday': '2026-09-07',
+          'totalWeeks': 20,
+        },
+      });
+      expect(restored.semesterConfigured, isTrue);
+      expect(restored.meta.week1Monday.year, 2026);
+      expect(restored.meta.week1Monday.month, 9);
+      expect(restored.meta.week1Monday.day, 7);
+    });
+  });
 }

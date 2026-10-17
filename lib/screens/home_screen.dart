@@ -66,7 +66,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       // App 从后台恢复（如早上打开）：立即重算并刷新小组件
-      WidgetService.refreshNextClass(_data.value);
+      WidgetService.refreshAll(_data.value);
     }
   }
 
@@ -198,7 +198,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
     _data.value = updated;
     _displayWeek.value = _effectiveWeek(updated);
-    WidgetService.refreshNextClass(updated);
+    WidgetService.refreshAll(updated);
   }
 
   // ───────────────────────── 导入流程 ─────────────────────────
@@ -220,6 +220,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // 深色下显式用 surface（M3 深灰）而非纯黑，给网格线留出对比空间
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: ValueListenableBuilder<TimetableData>(
           valueListenable: _data,

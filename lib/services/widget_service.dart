@@ -1,24 +1,30 @@
 import 'package:home_widget/home_widget.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/utils/next_class.dart';
+import 'package:timetable/utils/today_classes.dart';
 
 /// 桌面小组件数据同步（封装 home_widget，UI 层不直接碰它的 API）。
 ///
-/// 数据流：Dart 算好候选列表 → `saveWidgetData` 存 `next_items` /
-/// `next_empty_text` → `scheduleWidgetUpdates`（跨天 0 点与每节上下课自动刷新）
-/// → `updateWidget` 立即渲染。
-/// Kotlin 侧只做「按当前时间挑一条 + 拼字符串」，不承担业务逻辑。
+/// 数据流：Dart 算好展示数据 → `saveWidgetData` 存储 →
+/// `scheduleWidgetUpdates` 定时刷新（跨天 0 点与节次切换）→
+/// `updateWidget` 立即渲染。Kotlin 侧只做「按当前时间/日期挑数据 +
+/// 拼字符串渲染」，不承担业务逻辑。
 class WidgetService {
   WidgetService._();
 
-  /// Android 侧 AppWidgetProvider 的类名（不含包名前缀，
-  /// home_widget 会拼成 `包名.类名` 解析）。
-  static const String androidProviderName = 'NextClassWidgetProvider';
+  /// 「下节课」Android 侧 AppWidgetProvider 类名
+  /// （home_widget 会拼成 `包名.类名` 解析）。
+  static const String nextProviderName = 'NextClassWidgetProvider';
 
-  static const String _keyItems = 'next_items';
-  static const String _keyEmptyText = 'next_empty_text';
+  /// 「今日课程」Android 侧 AppWidgetProvider 类名。
+  static const String todayProviderName = 'TodayWidgetProvider';
 
-  /// 重新计算候选并同步到小组件。
+  static const String _keyNextItems = 'next_items';
+  static const String _keyNextEmptyText = 'next_empty_text';
+  static const String _keyTodayDays = 'today_days';
+  static const String _keyTodayEmptyText = 'today_empty_text';
+
+  /// 重新计算候选并同步「下节课」小组件。
   ///
   /// [now] 可注入（测试用）；[schedule] 控制是否设置定时刷新（测试可关）。
   static Future<void> refreshNextClass(
@@ -29,21 +35,71 @@ class WidgetService {
     final DateTime at = now ?? DateTime.now();
     final List<NextCandidate> candidates = nextCandidates(data, at);
     await HomeWidget.saveWidgetData<String>(
-      _keyItems,
+      _keyNextItems,
       NextCandidate.encodeList(candidates),
     );
     // 三种空状态：键缺失 → Kotlin 默认「打开 App 同步课表」；
     // 学期未配置 → 「请先设置学期」；已配置但无候选 → 「暂无课程」。
     await HomeWidget.saveWidgetData<String>(
-      _keyEmptyText,
+      _keyNextEmptyText,
       data.semesterConfigured ? '暂无课程' : '请先设置学期',
     );
     if (schedule) {
       await HomeWidget.scheduleWidgetUpdates(
         widgetUpdateTimes(data, at),
-        androidName: androidProviderName,
+        androidName: nextProviderName,
       );
     }
-    await HomeWidget.updateWidget(androidName: androidProviderName);
+    await HomeWidget.updateWidget(androidName: nextProviderName);
+  }
+
+  /// 重新计算未来 7 天分组并同步「今日课程」小组件。
+  ///
+  /// 存 7 天分组而非当天快照：跨天 0 点触发的是 Kotlin 的 onUpdate
+  /// （不重跑 Dart），按日期挑组才能跨天自动正确。
+  static Future<void> refreshToday(
+    TimetableData data, {
+    DateTime? now,
+    bool schedule = true,
+  }) async {
+    final DateTime at = now ?? DateTime.now();
+    final List<TodayGroup> groups = todayGroups(data, at);
+    await HomeWidget.saveWidgetData<String>(
+      _keyTodayDays,
+      TodayGroup.encodeList(groups),
+    );
+    // 空状态（Kotlin 找不到今天分组时显示）：
+    // 学期未配置 → 「请先设置学期」；已配置 → 数据过期兜底「打开 App 同步课表」。
+    await HomeWidget.saveWidgetData<String>(
+      _keyTodayEmptyText,
+      data.semesterConfigured ? '打开 App 同步课表' : '请先设置学期',
+    );
+    if (schedule) {
+      await HomeWidget.scheduleWidgetUpdates(
+        _midnightTimes(at),
+        androidName: todayProviderName,
+      );
+    }
+    await HomeWidget.updateWidget(androidName: todayProviderName);
+  }
+
+  /// 一次刷新「下节课」+「今日课程」两个小组件（App 内所有数据变更点用它）。
+  static Future<void> refreshAll(
+    TimetableData data, {
+    DateTime? now,
+    bool schedule = true,
+  }) async {
+    await refreshNextClass(data, now: now, schedule: schedule);
+    await refreshToday(data, now: now, schedule: schedule);
+  }
+
+  /// 「今日课程」的定时刷新时刻：未来 7 天每个 0 点（跨天切组）。
+  /// 今天的 0 点已过去，home_widget 会忽略过去时刻。
+  static List<DateTime> _midnightTimes(DateTime now) {
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    return List<DateTime>.generate(
+      7,
+      (int i) => today.add(Duration(days: i + 1)),
+    );
   }
 }

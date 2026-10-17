@@ -44,7 +44,14 @@ class TimetableData {
   final List<CourseOverride> overrides;
 
   /// 学期开始日是否已由用户设置。未设置时不得计算、展示周次。
-  bool get semesterConfigured => meta.week1Monday != unsetWeek1Monday;
+  ///
+  /// ⚠️ 只比较「年」，**不要**用 `DateTime` 相等比较：
+  /// [TimetableMeta.toJson] 存的是 `yyyy-MM-dd`（不带时区），而
+  /// `DateTime.parse('0001-01-01')` 会按**本地时区**解析成 `DateTime(1,1,1)`，
+  /// 它与 [unsetWeek1Monday] 的 `DateTime.utc(1,1,1)` 相差一个时区偏移、
+  /// 并不相等。直接比较会让「存盘再读」之后的未配置状态被误判成已配置，
+  /// 进而用公元 1 年算周次（截断成第 20 周）并显示空课表。
+  bool get semesterConfigured => meta.week1Monday.year > 1;
 
   /// 一份使用广科默认作息、但学期尚未设置的空课表。
   factory TimetableData.empty() {
@@ -106,7 +113,13 @@ class TimetableData {
     if (rawWeek1 is DateTime) {
       week1Monday = rawWeek1;
     } else if (rawWeek1 is String) {
-      week1Monday = DateTime.tryParse(rawWeek1) ?? unsetWeek1Monday;
+      // ⚠️ 存的是 `yyyy-MM-dd`（无时区），DateTime.tryParse 按本地时区解析，
+      // 公元 1 年会得到 DateTime(1,1,1) 本地时间 ≠ unsetWeek1Monday(UTC)。
+      // 这里把年 ≤ 1 的日期归一回哨兵值，保证存盘/读盘往返后语义一致。
+      final DateTime? parsed = DateTime.tryParse(rawWeek1);
+      week1Monday = (parsed == null || parsed.year <= 1)
+          ? unsetWeek1Monday
+          : parsed;
     } else {
       week1Monday = unsetWeek1Monday;
     }

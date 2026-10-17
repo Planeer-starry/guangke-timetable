@@ -78,7 +78,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     widget.data.value = updated;
-    WidgetService.refreshNextClass(updated);
+    WidgetService.refreshAll(updated);
   }
 
   /// 外观：底部弹窗三选一（跟随系统 / 浅色 / 深色）。
@@ -142,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     widget.data.value = cleared;
-    WidgetService.refreshNextClass(cleared);
+    WidgetService.refreshAll(cleared);
     if (mounted) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('课表已清空')));

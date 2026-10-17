@@ -60,14 +60,22 @@ class WeekGrid extends StatelessWidget {
   }
 
   Widget _buildHeader(BuildContext context) {
-    return SizedBox(
-      height: headerHeight,
-      child: Row(
-        children: <Widget>[
-          const SizedBox(width: timeColumnWidth),
-          for (int dayWeek = 1; dayWeek <= 7; dayWeek++)
-            Expanded(child: _buildHeaderCell(context, dayWeek)),
-        ],
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: colors.outlineVariant, width: 0.5),
+        ),
+      ),
+      child: SizedBox(
+        height: headerHeight,
+        child: Row(
+          children: <Widget>[
+            const SizedBox(width: timeColumnWidth),
+            for (int dayWeek = 1; dayWeek <= 7; dayWeek++)
+              Expanded(child: _buildHeaderCell(context, dayWeek)),
+          ],
+        ),
       ),
     );
   }
@@ -99,14 +107,14 @@ class WeekGrid extends StatelessWidget {
               names[dayWeek - 1],
               style: TextStyle(
                 fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-                color: isToday ? colors.primary : null,
+                color: isToday ? colors.onPrimaryContainer : null,
               ),
             ),
             Text(
               '${date.month}/${date.day}',
               style: TextStyle(
                 fontSize: 10,
-                color: isToday ? colors.primary : colors.outline,
+                color: isToday ? colors.onPrimaryContainer : colors.outline,
               ),
             ),
           ],
@@ -118,46 +126,75 @@ class WeekGrid extends StatelessWidget {
   /// 节次列：数据来自 meta.periods，禁止硬编码。
   Widget _buildTimeColumn(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
-    return SizedBox(
-      width: timeColumnWidth,
-      child: Column(
-        children: <Widget>[
-          for (final Period period in periods)
-            SizedBox(
-              height: rowHeight,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    Text(
-                      '${period.index}',
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      period.start,
-                      style: TextStyle(fontSize: 9, color: colors.outline),
-                    ),
-                    Text(
-                      period.end,
-                      style: TextStyle(fontSize: 9, color: colors.outline),
-                    ),
-                  ],
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(
+          right: BorderSide(color: colors.outlineVariant, width: 0.5),
+        ),
+      ),
+      child: SizedBox(
+        width: timeColumnWidth,
+        child: Column(
+          children: <Widget>[
+            for (final Period period in periods)
+              SizedBox(
+                height: rowHeight,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Text(
+                        '${period.index}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        period.start,
+                        style: TextStyle(fontSize: 9, color: colors.outline),
+                      ),
+                      Text(
+                        period.end,
+                        style: TextStyle(fontSize: 9, color: colors.outline),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildDayColumn(BuildContext context, int dayWeek) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final BorderSide gridSide = BorderSide(
+      color: colors.outlineVariant,
+      width: 0.5,
+    );
     final List<CourseOccurrence> dayCourses = occurrences
         .where((CourseOccurrence o) => o.dayWeek == dayWeek)
         .toList();
     return Expanded(
       child: Stack(
         children: <Widget>[
+          // 底层网格：每节一个 cell 画右/下边线，7 列叠加形成完整行列，
+          // 颜色取 outlineVariant（亮≈浅灰、暗≈比背景亮一档），深浅色都有结构感
+          Positioned.fill(
+            child: Column(
+              children: <Widget>[
+                for (int i = 0; i < periods.length; i++)
+                  SizedBox(
+                    height: rowHeight,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        border: Border(right: gridSide, bottom: gridSide),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
           for (final CourseOccurrence occurrence in dayCourses)
             Positioned(
               top: (occurrence.sectionStart - 1) * rowHeight,

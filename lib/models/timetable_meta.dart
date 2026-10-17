@@ -22,10 +22,15 @@ class TimetableMeta {
   final int totalWeeks;
 
   factory TimetableMeta.fromJson(Map<String, dynamic> json) {
+    // 防御式：字段缺失或日期非法时不抛异常，回退到「学期未设置」。
+    // 年 ≤ 1 视为未设置（避免本地/UTC 时区差异把哨兵值比成已配置）。
+    final DateTime? parsed = DateTime.tryParse('${json['week1Monday'] ?? ''}');
     return TimetableMeta(
       school: (json['school'] as String?) ?? '',
       semesterName: (json['semesterName'] as String?) ?? '',
-      week1Monday: DateTime.parse(json['week1Monday'] as String),
+      week1Monday: (parsed == null || parsed.year <= 1)
+          ? DateTime.utc(1, 1, 1)
+          : parsed,
       totalWeeks: (json['totalWeeks'] as int?) ?? 20,
     );
   }

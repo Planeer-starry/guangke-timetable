@@ -18,7 +18,7 @@ Future<void> main() async {
   final SettingsService settings = await SettingsService.forApp();
   final TimetableData data = await storage.load();
   // 启动即同步一次小组件数据（精确闹钟可用性只提示，不阻塞启动）
-  unawaited(WidgetService.refreshNextClass(data));
+  unawaited(WidgetService.refreshAll(data));
   runApp(TimetableApp(initialData: data, storage: storage, settings: settings));
 }
 

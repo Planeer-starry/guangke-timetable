@@ -216,7 +216,7 @@ class _ImportFlow {
   /// 数据落盘后的统一出口：更新 notifier、刷新小组件、通知调用方。
   void _emitUpdated(TimetableData updated) {
     data.value = updated;
-    WidgetService.refreshNextClass(updated);
+    WidgetService.refreshAll(updated);
     onDataChanged?.call(updated);
   }
 }
