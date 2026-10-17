@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 
 import 'package:timetable/models/period.dart';
 import 'package:timetable/utils/timetable_query.dart';
+import 'package:timetable/utils/week_mask.dart';
+import 'package:timetable/utils/week_math.dart';
 
 /// 课程详情底部弹窗。
 Future<void> showCourseDetailSheet(
   BuildContext context, {
   required CourseOccurrence occurrence,
   required List<Period> periods,
-  required int week,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -47,7 +48,9 @@ Future<void> showCourseDetailSheet(
               Text(
                 '教师：${occurrence.course.teacher.isEmpty ? '未填写' : occurrence.course.teacher}',
               ),
-              Text('周次：第 $week 周'),
+              Text(
+                '周次：${formatWeekRanges(weeksFromWeekMask(occurrence.course.weekMask))}',
+              ),
               if (occurrence.course.note.isNotEmpty)
                 Text('备注：${occurrence.course.note}'),
             ],

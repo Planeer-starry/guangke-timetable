@@ -82,24 +82,36 @@ class WeekGrid extends StatelessWidget {
         date.month == now.month &&
         date.day == now.day;
     final List<String> names = <String>['一', '二', '三', '四', '五', '六', '日'];
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: <Widget>[
-        Text(
-          names[dayWeek - 1],
-          style: TextStyle(
-            fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-            color: isToday ? colors.primary : null,
-          ),
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
+      child: Container(
+        decoration: isToday
+            ? BoxDecoration(
+                color: colors.primaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              )
+            : null,
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Text(
+              names[dayWeek - 1],
+              style: TextStyle(
+                fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+                color: isToday ? colors.primary : null,
+              ),
+            ),
+            Text(
+              '${date.month}/${date.day}',
+              style: TextStyle(
+                fontSize: 10,
+                color: isToday ? colors.primary : colors.outline,
+              ),
+            ),
+          ],
         ),
-        Text(
-          '${date.month}/${date.day}',
-          style: TextStyle(
-            fontSize: 10,
-            color: isToday ? colors.primary : colors.outline,
-          ),
-        ),
-      ],
+      ),
     );
   }
 

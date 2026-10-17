@@ -189,7 +189,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             context,
                             occurrence: occurrence,
                             periods: data.periods,
-                            week: week,
                           ),
                     ),
             ),

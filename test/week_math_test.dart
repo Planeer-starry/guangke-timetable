@@ -39,4 +39,48 @@ void main() {
       expect(mondayOfWeek(week1Monday, 3), DateTime(2026, 9, 21));
     });
   });
+
+  group('formatWeekRanges', () {
+    test('单周', () {
+      expect(formatWeekRanges(<int>[5]), '第5周');
+    });
+
+    test('连续区间 1..16', () {
+      expect(
+        formatWeekRanges(List<int>.generate(16, (int i) => i + 1)),
+        '1-16周',
+      );
+    });
+
+    test('不连续区间 1-8 与 10-16', () {
+      expect(
+        formatWeekRanges(<int>[
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+        ]),
+        '1-8,10-16周',
+      );
+    });
+
+    test('乱序输入', () {
+      expect(formatWeekRanges(<int>[10, 1, 2]), '1-2,10周');
+    });
+
+    test('空列表 → 无', () {
+      expect(formatWeekRanges(<int>[]), '无');
+    });
+  });
 }

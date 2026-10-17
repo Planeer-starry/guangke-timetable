@@ -33,3 +33,35 @@ DateTime mondayOfWeek(DateTime week1Monday, int week) {
       .add(Duration(days: (week - 1) * 7));
   return DateTime(monday.year, monday.month, monday.day);
 }
+
+/// 把周次列表格式化成中文范围（展示用）：
+/// `[5]` → `第5周`；`[1..16]` → `1-16周`；
+/// `[1..8, 10..16]` → `1-8,10-16周`；空列表 → `无`。
+String formatWeekRanges(List<int> weeks) {
+  if (weeks.isEmpty) {
+    return '无';
+  }
+  // 去重后再排序，避免重复周次产生 "1-2,2周" 这类怪输出
+  final List<int> sorted = weeks.toSet().toList()..sort();
+  final List<List<int>> segments = <List<int>>[];
+  for (final int week in sorted) {
+    if (segments.isNotEmpty && week == segments.last.last + 1) {
+      segments.last.add(week);
+    } else {
+      segments.add(<int>[week]);
+    }
+  }
+  // 特例：只有一个周次 → "第5周"
+  if (segments.length == 1 && segments.single.length == 1) {
+    return '第${segments.single.single}周';
+  }
+  // 其余情况：各段用逗号连接，最后统一加一个"周"
+  final String body = segments
+      .map(
+        (List<int> segment) => segment.length == 1
+            ? '${segment.single}'
+            : '${segment.first}-${segment.last}',
+      )
+      .join(',');
+  return '$body周';
+}
