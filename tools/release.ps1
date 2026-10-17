@@ -192,4 +192,4 @@ Write-Host ''
 Write-Host '分发提示：把这个 apk 发给同学，安装前需先卸载旧版本'
 Write-Host '（debug 包与 release 包签名不同，不能覆盖安装）'
 
-exit 0
+exit 0

@@ -41,6 +41,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final ValueNotifier<TimetableData> _data;
   late final ValueNotifier<int> _displayWeek;
+  late final PageController _pageController;
   late final ValueNotifier<UpdateInfo?> _updateInfo;
   bool _updateBannerDismissed = false;
 
@@ -50,6 +51,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _data = ValueNotifier<TimetableData>(widget.initialData);
     _displayWeek = ValueNotifier<int>(_initialWeek(widget.initialData));
+    // PageView 页码 = 周次 - 1，初始对齐当前浏览周
+    _pageController = PageController(initialPage: _displayWeek.value - 1);
     _updateInfo = ValueNotifier<UpdateInfo?>(null);
     // 修正 A1：启动后（首帧后）静默检查一次更新，失败完全不提示
     WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdateSilently());
@@ -60,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _data.dispose();
     _displayWeek.dispose();
+    _pageController.dispose();
     _updateInfo.dispose();
     super.dispose();
   }
@@ -139,7 +143,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final TimetableData after = _data.value;
     if (after.meta.week1Monday != before.meta.week1Monday ||
         after.meta.totalWeeks != before.meta.totalWeeks) {
-      _displayWeek.value = _effectiveWeek(after);
+      // 学期参数变了：直接跳到新位置，不做滑动动画
+      _setDisplayWeek(
+        _effectiveWeek(after),
+        after.meta.totalWeeks,
+        animate: false,
+      );
     }
   }
 
@@ -163,27 +172,49 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     return _effectiveWeek(data);
   }
 
-  /// 翻页：只改内存里的浏览位置，**不写 weekOverride**。
-  void _goToWeek(int week, int totalWeeks) {
-    final int clamped;
-    if (week < 1) {
-      clamped = 1;
-    } else if (week > totalWeeks) {
-      clamped = totalWeeks;
-    } else {
-      clamped = week;
+  /// 设置当前浏览周次并同步 PageView 位置（统一入口：
+  /// _displayWeek 与 PageController 必须一起动，分开改会失步）。
+  ///
+  /// [animate] 为 true 时带滑动动画（按钮 / 回到本周）；
+  /// false 直接跳（导入课表、改学期等数据变化场景，
+  /// 否则会看到中间所有周快速滑过的动画）。
+  void _setDisplayWeek(int week, int totalWeeks, {bool animate = true}) {
+    // num.clamp 返回 num，必须 toInt 才能赋给 int
+    final int clamped = week.clamp(1, totalWeeks).toInt();
+    if (_displayWeek.value == clamped) {
+      return;
     }
     _displayWeek.value = clamped;
+    if (!_pageController.hasClients) {
+      return;
+    }
+    if (animate) {
+      // animateToPage 过程中会触发 onPageChanged；
+      // 它只写 _displayWeek、不碰 controller（见 _buildTimetable），无死循环
+      _pageController.animateToPage(
+        clamped - 1,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    } else {
+      _pageController.jumpToPage(clamped - 1);
+    }
+  }
+
+  /// 翻页：只改内存里的浏览位置，**不写 weekOverride**。
+  void _goToWeek(int week, int totalWeeks) {
+    _setDisplayWeek(week, totalWeeks);
   }
 
   /// 回到本周：**清除**周次覆盖（恢复跟随日历），再把内存设为本周。
   Future<void> _backToCurrentWeek(TimetableData data) async {
     await widget.settings.setWeekOverride(null);
-    _displayWeek.value = weekOfDate(
+    final int w = weekOfDate(
       DateTime.now(),
       data.meta.week1Monday,
       data.meta.totalWeeks,
     );
+    _setDisplayWeek(w, data.meta.totalWeeks);
   }
 
   /// 打开学期设置页；保存成功会返回新的 TimetableData。
@@ -199,7 +230,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       return;
     }
     _data.value = updated;
-    _displayWeek.value = _effectiveWeek(updated);
+    _setDisplayWeek(
+      _effectiveWeek(updated),
+      updated.meta.totalWeeks,
+      animate: false,
+    );
     WidgetService.refreshAll(updated);
   }
 
@@ -212,8 +247,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context,
       storage: widget.storage,
       data: _data,
-      onDataChanged: (TimetableData updated) =>
-          _displayWeek.value = _effectiveWeek(updated),
+      onDataChanged: (TimetableData updated) => _setDisplayWeek(
+        _effectiveWeek(updated),
+        updated.meta.totalWeeks,
+        animate: false,
+      ),
     );
   }
 
@@ -331,31 +369,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildTimetable(BuildContext context, TimetableData data) {
-    return ValueListenableBuilder<int>(
-      valueListenable: _displayWeek,
-      builder: (BuildContext context, int week, _) {
-        final List<CourseOccurrence> occurrences = coursesForWeek(data, week);
-        final DateTime monday = mondayOfWeek(data.meta.week1Monday, week);
-        final bool isCurrentWeek = week == _effectiveWeek(data);
-        return Column(
-          children: <Widget>[
-            _buildWeekBar(context, week, data),
-            const Divider(height: 1),
-            Expanded(
-              child: occurrences.isEmpty
-                  ? _buildEmptyWeek(context)
-                  : WeekGrid(
-                      periods: data.periods,
-                      occurrences: occurrences,
-                      weekMonday: monday,
-                      isCurrentWeek: isCurrentWeek,
-                      onCellTap: (List<CourseOccurrence> cell) =>
-                          _openCell(context, cell, data.periods),
-                    ),
-            ),
-          ],
-        );
-      },
+    // ⚠️ ValueListenableBuilder 只包【周条】：如果包住整个 Column，
+    // 每次 _displayWeek 变化都会重建 PageView，滑动中途会被打断。
+    return Column(
+      children: <Widget>[
+        ValueListenableBuilder<int>(
+          valueListenable: _displayWeek,
+          builder: (BuildContext context, int week, _) =>
+              _buildWeekBar(context, week, data),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: data.meta.totalWeeks,
+            // iOS 式回弹：跟手 + 惯性 + 第 1 周 / 最后一周边缘回弹
+            physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
+            onPageChanged: (int index) {
+              // 滑动只写值，绝不再动 controller——
+              // 否则与 _setDisplayWeek 的 animateToPage 互相触发死循环
+              _displayWeek.value = index + 1;
+            },
+            itemBuilder: (BuildContext context, int index) {
+              final int week = index + 1;
+              final List<CourseOccurrence> occurrences = coursesForWeek(
+                data,
+                week,
+              );
+              if (occurrences.isEmpty) {
+                return _buildEmptyWeek(context);
+              }
+              return WeekGrid(
+                periods: data.periods,
+                occurrences: occurrences,
+                weekMonday: mondayOfWeek(data.meta.week1Monday, week),
+                isCurrentWeek: week == _effectiveWeek(data),
+                onCellTap: (List<CourseOccurrence> cell) =>
+                    _openCell(context, cell, data.periods),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -415,6 +470,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildWeekBar(BuildContext context, int week, TimetableData data) {
+    final bool isCurrentWeek = week == _effectiveWeek(data);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       child: Row(
@@ -430,10 +486,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             icon: const Icon(Icons.chevron_right),
             onPressed: () => _goToWeek(week + 1, data.meta.totalWeeks),
           ),
-          TextButton(
-            onPressed: () => _backToCurrentWeek(data),
-            child: const Text('回到本周'),
-          ),
+          // 只在不在本周时显示。用条件插入而非 Visibility/Opacity：
+          // 隐藏时 Row 空间自然收拢，右侧不会空出一块
+          if (!isCurrentWeek)
+            TextButton(
+              onPressed: () => _backToCurrentWeek(data),
+              child: const Text('回到本周'),
+            ),
         ],
       ),
     );
