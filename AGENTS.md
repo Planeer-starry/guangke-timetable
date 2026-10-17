@@ -162,7 +162,7 @@
 
 ## 5. 数据模型
 
-### 5.1 存储位置
+### 5.1 存储位置与「单一真源」原则
 
 课表数据存成一个 JSON 文件：
 
@@ -170,7 +170,24 @@
 <getApplicationDocumentsDirectory()>/timetable.json
 ```
 
-设置项（当前周次覆盖、主题、学期参数）存 `shared_preferences`。
+**学期参数（`school` / `semesterName` / `week1Monday` / `totalWeeks`）的唯一真源是
+`timetable.json` 里的 `meta`，禁止在 `shared_preferences` 里另存一份。**
+
+`shared_preferences` 只允许存 **UI 偏好**，例如：
+
+- 当前查看的周次（只是"临时浏览位置"，不是学期参数）
+- 主题模式（跟随系统 / 亮 / 暗）
+- 上次导入时间、来源文件名的展示用缓存
+- 是否已展示过某个引导
+
+> 理由：学期参数与课表数据强绑定。分开存会在换学期时出现「课表已换、周次没换」
+> 这类不一致。**同一份信息只允许有一个写入点。**
+
+另外，`StorageService` 的目录**必须能从构造函数注入**（`Directory` 参数），
+以便单元测试改用临时目录；同时提供一个便利工厂
+`StorageService.forApp()`，内部调用 `path_provider` 取真实目录。
+**禁止**在 service 内部直接调 `getApplicationDocumentsDirectory()`，
+否则测试无法运行。
 
 ### 5.2 JSON 结构（对外契约，不要改动字段名）
 
