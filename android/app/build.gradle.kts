@@ -70,3 +70,12 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // FileProvider（应用内更新安装 APK）需要 androidx.core。
+    // home_widget 自己是用 implementation 依赖它的 —— implementation 不传递给
+    // 依赖方，所以 app 模块必须显式声明，否则编译期找不到
+    // androidx.core.content.FileProvider。
+    // 版本与 home_widget 保持一致（1.13.1），避免版本冲突。
+    implementation("androidx.core:core:1.13.1")
+}

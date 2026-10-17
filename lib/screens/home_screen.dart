@@ -4,15 +4,19 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:timetable/models/course.dart';
 import 'package:timetable/models/course_override.dart';
 import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
+import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/import_preview_screen.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
+import 'package:timetable/screens/settings_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/timetable_importer.dart';
 import 'package:timetable/utils/timetable_query.dart';
@@ -43,6 +47,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final ValueNotifier<TimetableData> _data;
   late final ValueNotifier<int> _displayWeek;
+  late final ValueNotifier<UpdateInfo?> _updateInfo;
+  bool _updateBannerDismissed = false;
 
   @override
   void initState() {
@@ -50,6 +56,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _data = ValueNotifier<TimetableData>(widget.initialData);
     _displayWeek = ValueNotifier<int>(_initialWeek(widget.initialData));
+    _updateInfo = ValueNotifier<UpdateInfo?>(null);
+    // 修正 A1：启动后（首帧后）静默检查一次更新，失败完全不提示
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkUpdateSilently());
   }
 
   @override
@@ -57,6 +66,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _data.dispose();
     _displayWeek.dispose();
+    _updateInfo.dispose();
     super.dispose();
   }
 
@@ -65,6 +75,72 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       // App 从后台恢复（如早上打开）：立即重算并刷新小组件
       WidgetService.refreshNextClass(_data.value);
+    }
+  }
+
+  /// 修正 A1：启动后静默检查更新，失败完全不提示、不影响使用。
+  Future<void> _checkUpdateSilently() async {
+    try {
+      final PackageInfo packageInfo = await PackageInfo.fromPlatform();
+      final int current = int.tryParse(packageInfo.buildNumber) ?? 0;
+      final UpdateInfo? info = await UpdateService.checkForUpdate(
+        currentVersionCode: current,
+        packageName: packageInfo.packageName,
+      );
+      if (info == null || !mounted) {
+        return;
+      }
+      if (info.isForceUpdateFor(current)) {
+        _showForceUpdateDialog(info);
+        return;
+      }
+      setState(() => _updateInfo.value = info);
+    } catch (error) {
+      // 检查更新失败完全静默，绝不影响使用（修正 A1）
+    }
+  }
+
+  /// 强制更新：不可关闭的对话框拦住（点外部、返回键都无法关闭）。
+  void _showForceUpdateDialog(UpdateInfo info) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          title: const Text('需要更新'),
+          content: Text('当前版本过旧，必须更新到 ${info.versionName} 才能继续使用。'),
+          actions: <Widget>[
+            FilledButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _openSettings();
+              },
+              child: const Text('立即更新'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 打开设置页；返回时若学期参数变了，重算浏览周。
+  Future<void> _openSettings() async {
+    final TimetableData before = _data.value;
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(
+          data: _data,
+          storage: widget.storage,
+          settings: widget.settings,
+          initialUpdate: _updateInfo.value,
+        ),
+      ),
+    );
+    final TimetableData after = _data.value;
+    if (after.meta.week1Monday != before.meta.week1Monday ||
+        after.meta.totalWeeks != before.meta.totalWeeks) {
+      _displayWeek.value = _effectiveWeek(after);
     }
   }
 
@@ -298,20 +374,70 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onPressed: _startImport,
           ),
           IconButton(
-            tooltip: '设置学期',
+            tooltip: '设置',
             icon: const Icon(Icons.settings),
-            onPressed: _openSemesterSetup,
+            onPressed: _openSettings,
           ),
         ],
       ),
-      body: ValueListenableBuilder<TimetableData>(
-        valueListenable: _data,
-        builder: (BuildContext context, TimetableData data, _) {
-          if (!data.semesterConfigured) {
-            return _buildSetupGuide(context);
-          }
-          return _buildTimetable(context, data);
-        },
+      body: Column(
+        children: <Widget>[
+          ValueListenableBuilder<UpdateInfo?>(
+            valueListenable: _updateInfo,
+            builder: (BuildContext context, UpdateInfo? info, _) =>
+                _buildUpdateBanner(context, info),
+          ),
+          Expanded(
+            child: ValueListenableBuilder<TimetableData>(
+              valueListenable: _data,
+              builder: (BuildContext context, TimetableData data, _) {
+                if (!data.semesterConfigured) {
+                  return _buildSetupGuide(context);
+                }
+                return _buildTimetable(context, data);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 首页顶部「发现新版本」提示条：可关闭；点「查看」进设置页下载。
+  Widget _buildUpdateBanner(BuildContext context, UpdateInfo? info) {
+    if (info == null || _updateBannerDismissed) {
+      return const SizedBox.shrink();
+    }
+    return Material(
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: Row(
+        children: <Widget>[
+          const SizedBox(width: 12),
+          Icon(
+            Icons.system_update,
+            size: 18,
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '发现新版本 ${info.versionName}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSecondaryContainer,
+              ),
+            ),
+          ),
+          TextButton(onPressed: _openSettings, child: const Text('查看')),
+          IconButton(
+            tooltip: '关闭提示',
+            icon: const Icon(Icons.close, size: 18),
+            color: Theme.of(context).colorScheme.onSecondaryContainer,
+            onPressed: () => setState(() => _updateBannerDismissed = true),
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
     );
   }
