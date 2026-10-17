@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:timetable/models/period.dart';
+import 'package:timetable/theme/week_grid_dimens.dart';
+import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/widgets/course_block.dart';
 
@@ -9,7 +11,13 @@ import 'package:timetable/widgets/course_block.dart';
 /// 不用 GridView（跨节课无法定位），改用固定行高 + Stack/Positioned：
 /// 课程块 `top = (sectionStart-1) * rowHeight`，
 /// `height = (sectionEnd - sectionStart + 1) * rowHeight`，
-/// 连堂课自然撑高，节数与时间全部来自数据、零硬编码。
+/// 连堂课自然撑高，节数与时间全部来自数据。
+///
+/// 尺寸全部来自 [dimens]（断点令牌，页面顶层算好传入，本 widget 不读
+/// MediaQuery）：
+/// - compact / medium：固定行高，屏幕不够高时整体滚动；
+/// - expanded（平板）：行高按可用高度动态铺满（clamp 64~100），
+///   解决大屏底部大片空白。
 class WeekGrid extends StatelessWidget {
   const WeekGrid({
     super.key,
@@ -18,6 +26,8 @@ class WeekGrid extends StatelessWidget {
     required this.weekMonday,
     required this.isCurrentWeek,
     required this.onCellTap,
+    required this.dimens,
+    required this.windowSize,
   });
 
   final List<Period> periods;
@@ -29,17 +39,34 @@ class WeekGrid extends StatelessWidget {
   /// 单门时长度为 1，多门时由上层弹选择列表。
   final ValueChanged<List<CourseOccurrence>> onCellTap;
 
-  /// 每一节的高度。
-  static const double rowHeight = 64;
+  /// 断点尺寸令牌。
+  final WeekGridDimens dimens;
 
-  /// 左侧节次列宽。
-  static const double timeColumnWidth = 48;
-
-  /// 表头高度。
-  static const double headerHeight = 44;
+  /// 窗口断点（透传给 CourseBlock 判断教师行显示）。
+  final WindowSize windowSize;
 
   @override
   Widget build(BuildContext context) {
+    if (dimens.rowHeight > 0) {
+      return _buildGrid(context, dimens.rowHeight);
+    }
+    // expanded：行高按可用高度动态算，铺满底部不留白
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available = constraints.maxHeight - dimens.headerHeight;
+        // 下限 64 保证文字不被压扁；上限 100 防止超大屏行高被拉离谱。
+        // 若算出的总高仍超出可用高度（如平板竖屏较矮），交给下方
+        // SingleChildScrollView 滚动。
+        final double rowHeight = (available / periods.length).clamp(
+          64.0,
+          100.0,
+        );
+        return _buildGrid(context, rowHeight);
+      },
+    );
+  }
+
+  Widget _buildGrid(BuildContext context, double rowHeight) {
     return Column(
       children: <Widget>[
         _buildHeader(context),
@@ -50,9 +77,9 @@ class WeekGrid extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  _buildTimeColumn(context),
+                  _buildTimeColumn(context, rowHeight),
                   for (int dayWeek = 1; dayWeek <= 7; dayWeek++)
-                    _buildDayColumn(context, dayWeek),
+                    _buildDayColumn(context, dayWeek, rowHeight),
                 ],
               ),
             ),
@@ -71,10 +98,10 @@ class WeekGrid extends StatelessWidget {
         ),
       ),
       child: SizedBox(
-        height: headerHeight,
+        height: dimens.headerHeight,
         child: Row(
           children: <Widget>[
-            const SizedBox(width: timeColumnWidth),
+            SizedBox(width: dimens.timeColumnWidth),
             for (int dayWeek = 1; dayWeek <= 7; dayWeek++)
               Expanded(child: _buildHeaderCell(context, dayWeek)),
           ],
@@ -116,7 +143,7 @@ class WeekGrid extends StatelessWidget {
             Text(
               '${date.month}/${date.day}',
               style: TextStyle(
-                fontSize: 10,
+                fontSize: dimens.headerFontSize,
                 color: isToday ? colors.onPrimaryContainer : colors.outline,
               ),
             ),
@@ -127,7 +154,7 @@ class WeekGrid extends StatelessWidget {
   }
 
   /// 节次列：数据来自 meta.periods，禁止硬编码。
-  Widget _buildTimeColumn(BuildContext context) {
+  Widget _buildTimeColumn(BuildContext context, double rowHeight) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -136,7 +163,7 @@ class WeekGrid extends StatelessWidget {
         ),
       ),
       child: SizedBox(
-        width: timeColumnWidth,
+        width: dimens.timeColumnWidth,
         child: Column(
           children: <Widget>[
             for (final Period period in periods)
@@ -149,15 +176,24 @@ class WeekGrid extends StatelessWidget {
                     children: <Widget>[
                       Text(
                         '${period.index}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: dimens.sectionFontSize,
+                        ),
                       ),
                       Text(
                         period.start,
-                        style: TextStyle(fontSize: 9, color: colors.outline),
+                        style: TextStyle(
+                          fontSize: dimens.timeFontSize,
+                          color: colors.outline,
+                        ),
                       ),
                       Text(
                         period.end,
-                        style: TextStyle(fontSize: 9, color: colors.outline),
+                        style: TextStyle(
+                          fontSize: dimens.timeFontSize,
+                          color: colors.outline,
+                        ),
                       ),
                     ],
                   ),
@@ -169,7 +205,7 @@ class WeekGrid extends StatelessWidget {
     );
   }
 
-  Widget _buildDayColumn(BuildContext context, int dayWeek) {
+  Widget _buildDayColumn(BuildContext context, int dayWeek, double rowHeight) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final BorderSide gridSide = BorderSide(
       color: colors.outlineVariant,
@@ -191,6 +227,10 @@ class WeekGrid extends StatelessWidget {
           ), () => <CourseOccurrence>[])
           .add(occurrence);
     }
+    final List<Widget> courseBlocks = <Widget>[
+      for (final List<CourseOccurrence> cell in cells.values)
+        _buildCourseBlock(cell, rowHeight),
+    ];
     return Expanded(
       child: Stack(
         children: <Widget>[
@@ -211,23 +251,32 @@ class WeekGrid extends StatelessWidget {
               ],
             ),
           ),
-          for (final List<CourseOccurrence> cell in cells.values)
-            Positioned(
-              top: (cell.first.sectionStart - 1) * rowHeight,
-              left: 1,
-              right: 1,
-              height:
-                  (cell.first.sectionEnd - cell.first.sectionStart + 1) *
-                      rowHeight -
-                  2,
-              child: CourseBlock(
-                occurrence: cell.first,
-                periods: periods,
-                extraCount: cell.length - 1,
-                onTap: () => onCellTap(cell),
-              ),
-            ),
+          ...courseBlocks,
         ],
+      ),
+    );
+  }
+
+  /// 同格课程块的定位层：top/height 由节次与行高算出。
+  Widget _buildCourseBlock(List<CourseOccurrence> cell, double rowHeight) {
+    final CourseOccurrence first = cell.first;
+    final int sections = first.sectionEnd - first.sectionStart + 1;
+    return Positioned(
+      top: (first.sectionStart - 1) * rowHeight,
+      left: 1,
+      right: 1,
+      height: sections * rowHeight - 2,
+      child: CourseBlock(
+        occurrence: first,
+        periods: periods,
+        extraCount: cell.length - 1,
+        onTap: () => onCellTap(cell),
+        dimens: dimens,
+        windowSize: windowSize,
+        // 理论高度（不减 2px 边距修正），保证两节连堂恰好命中
+        // 「块高 >= 2 × 行高」的教师行判断
+        blockHeight: sections * rowHeight,
+        rowHeight: rowHeight,
       ),
     );
   }

@@ -12,6 +12,8 @@ import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
+import 'package:timetable/theme/week_grid_dimens.dart';
+import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/utils/week_mask.dart';
 import 'package:timetable/utils/week_math.dart';
@@ -259,6 +261,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    // 断点在页面顶层读一次往下传（AppBar 部分）
+    final WindowSize windowSize = windowSizeOf(context);
     return Scaffold(
       // 深色下显式用 surface（M3 深灰）而非纯黑，给网格线留出对比空间
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -268,17 +272,23 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (BuildContext context, TimetableData data, _) {
             return Text(
               data.meta.semesterName.isEmpty ? '广科课表' : data.meta.semesterName,
+              // expanded 放大加粗；compact/medium 保持默认（titleLarge）
+              style: windowSize.isExpanded
+                  ? const TextStyle(fontSize: 24, fontWeight: FontWeight.w500)
+                  : null,
             );
           },
         ),
         actions: <Widget>[
           IconButton(
             tooltip: '导入课表',
+            iconSize: windowSize.isExpanded ? 28 : 24,
             icon: const Icon(Icons.upload_file),
             onPressed: _startImport,
           ),
           IconButton(
             tooltip: '设置',
+            iconSize: windowSize.isExpanded ? 28 : 24,
             icon: const Icon(Icons.settings),
             onPressed: _openSettings,
           ),
@@ -369,6 +379,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   }
 
   Widget _buildTimetable(BuildContext context, TimetableData data) {
+    // 断点在页面顶层读一次往下传，子 widget 不读 MediaQuery。
+    // 窗口尺寸变化（平板旋转）会触发重建，这里自动重算
+    final WindowSize windowSize = windowSizeOf(context);
+    final WeekGridDimens dimens = WeekGridDimens.of(windowSize);
     // ⚠️ ValueListenableBuilder 只包【周条】：如果包住整个 Column，
     // 每次 _displayWeek 变化都会重建 PageView，滑动中途会被打断。
     return Column(
@@ -376,7 +390,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ValueListenableBuilder<int>(
           valueListenable: _displayWeek,
           builder: (BuildContext context, int week, _) =>
-              _buildWeekBar(context, week, data),
+              _buildWeekBar(context, week, data, windowSize),
         ),
         const Divider(height: 1),
         Expanded(
@@ -406,6 +420,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 isCurrentWeek: week == _effectiveWeek(data),
                 onCellTap: (List<CourseOccurrence> cell) =>
                     _openCell(context, cell, data.periods),
+                dimens: dimens,
+                windowSize: windowSize,
               );
             },
           ),
@@ -469,30 +485,67 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  Widget _buildWeekBar(BuildContext context, int week, TimetableData data) {
+  Widget _buildWeekBar(
+    BuildContext context,
+    int week,
+    TimetableData data,
+    WindowSize windowSize,
+  ) {
     final bool isCurrentWeek = week == _effectiveWeek(data);
+    final double chevronSize = switch (windowSize) {
+      WindowSize.compact => 24.0,
+      WindowSize.medium => 28.0,
+      WindowSize.expanded => 32.0,
+    };
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: windowSize.isExpanded ? 8 : 4,
+      ),
       child: Row(
         children: <Widget>[
           IconButton(
             tooltip: '上一周',
+            iconSize: chevronSize,
             icon: const Icon(Icons.chevron_left),
             onPressed: () => _goToWeek(week - 1, data.meta.totalWeeks),
           ),
-          Expanded(child: Center(child: Text('第 $week 周'))),
+          Expanded(
+            child: Center(
+              child: Text(
+                '第 $week 周',
+                style: TextStyle(
+                  fontSize: switch (windowSize) {
+                    WindowSize.compact => 15.0,
+                    WindowSize.medium => 17.0,
+                    WindowSize.expanded => 20.0,
+                  },
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: '下一周',
+            iconSize: chevronSize,
             icon: const Icon(Icons.chevron_right),
             onPressed: () => _goToWeek(week + 1, data.meta.totalWeeks),
           ),
           // 只在不在本周时显示。用条件插入而非 Visibility/Opacity：
-          // 隐藏时 Row 空间自然收拢，右侧不会空出一块
+          // 隐藏时 Row 空间自然收拢，右侧不会空出一块。
+          // expanded 用带图标的按钮，宽屏上更醒目也更容易点到
           if (!isCurrentWeek)
-            TextButton(
-              onPressed: () => _backToCurrentWeek(data),
-              child: const Text('回到本周'),
-            ),
+            if (windowSize.isExpanded)
+              TextButton.icon(
+                onPressed: () => _backToCurrentWeek(data),
+                icon: const Icon(Icons.today),
+                label: const Text('回到本周'),
+              )
+            else
+              TextButton(
+                onPressed: () => _backToCurrentWeek(data),
+                child: const Text('回到本周'),
+              ),
         ],
       ),
     );
