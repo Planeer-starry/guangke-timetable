@@ -1,66 +1,50 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 「今日课程」小组件根布局。只允许 LinearLayout / TextView / ImageView；
-     行内容由 Kotlin 用 RemoteViews.addView(R.id.today_rows, …) 动态填充 -->
+<!-- 「今日课程」小组件根布局。结构固定、内容左对齐（与「下节课」同一设计语言）：
+     表头永远显示（日期 · 周次），主体区有课逐行渲染、没课左对齐一行文案。
+     行内容由 Kotlin 用 RemoteViews.addView(R.id.today_rows, …) 动态填充。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/today_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="@drawable/widget_today_bg"
-    android:padding="12dp">
+    android:background="@drawable/widget_card_bg"
+    android:padding="@dimen/widget_padding">
 
-    <!-- 表头：日期 · 周次（列表态显示） -->
+    <!-- 表头：日期 · 周次（永远显示） -->
     <TextView
         android:id="@+id/today_header"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textSize="11sp"
-        android:textColor="#49454E"
+        android:textSize="@dimen/widget_header_size"
+        android:textColor="@color/widget_sub"
         android:maxLines="1"
-        android:ellipsize="end"
-        android:visibility="gone" />
+        android:ellipsize="end" />
 
-    <!-- 课程行容器（Kotlin 动态 addView） -->
+    <!-- 主体区：垂直居中、内容左对齐 -->
     <LinearLayout
-        android:id="@+id/today_rows"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="6dp"
-        android:orientation="vertical"
-        android:visibility="gone" />
-
-    <!-- 空状态：图标 + 主文案 + 小字提示，weight=1 垂直居中 -->
-    <LinearLayout
-        android:id="@+id/today_empty"
+        android:id="@+id/today_body"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:layout_marginTop="4dp"
         android:orientation="vertical"
-        android:gravity="center"
-        android:visibility="gone">
+        android:gravity="center_vertical|start">
 
-        <ImageView
-            android:id="@+id/empty_icon"
-            android:layout_width="28dp"
-            android:layout_height="28dp"
-            android:src="@drawable/ic_widget_empty"
-            android:contentDescription="@null" />
+        <!-- 课程行容器（Kotlin 动态 addView） -->
+        <LinearLayout
+            android:id="@+id/today_rows"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical" />
 
+        <!-- 空状态：左对齐单行主文案（今天没有课 / 请先设置学期 / 打开 App 同步课表） -->
         <TextView
-            android:id="@+id/empty_title"
+            android:id="@+id/today_empty"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textSize="14sp"
+            android:textSize="@dimen/widget_title_size"
             android:textStyle="bold"
-            android:textColor="#1D1B20" />
-
-        <TextView
-            android:id="@+id/empty_subtitle"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textSize="11sp"
-            android:textColor="#49454E" />
+            android:textColor="@color/widget_title"
+            android:maxLines="1"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件共用卡片背景：圆角 + token 底色（亮/暗由 values-night 自动切换） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/widget_bg" />
+    <corners android:radius="@dimen/widget_radius" />
+</shape>

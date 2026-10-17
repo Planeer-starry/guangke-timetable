@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- 「今日课程」卡片圆角背景：颜色引用 @color，values-night 自动切深色 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/widget_today_bg" />
-    <corners android:radius="16dp" />
-</shape>

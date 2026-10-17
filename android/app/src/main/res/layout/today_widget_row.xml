@@ -1,46 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 「今日课程」单行课程：色条 + 等宽时间 + 课程名 + 地点 -->
+<!-- 「今日课程」单行课程：4dp 色条(24dp) + 固定宽时间 + 课名(weight) + 地点。
+     行高 28dp、行间距 2dp（marginTop），行间不画分隔线。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
+    android:layout_height="28dp"
+    android:layout_marginTop="2dp"
     android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingTop="3dp"
-    android:paddingBottom="3dp">
+    android:gravity="center_vertical">
 
     <TextView
         android:id="@+id/row_color"
-        android:layout_width="3dp"
-        android:layout_height="14dp" />
+        android:layout_width="@dimen/widget_accent_width"
+        android:layout_height="24dp" />
 
     <TextView
         android:id="@+id/row_time"
-        android:layout_width="wrap_content"
+        android:layout_width="78dp"
         android:layout_height="wrap_content"
         android:layout_marginStart="6dp"
-        android:layout_marginEnd="8dp"
-        android:textSize="10sp"
+        android:textSize="@dimen/widget_sub_size"
         android:typeface="monospace"
-        android:textColor="#49454E" />
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:textColor="@color/widget_sub" />
 
     <TextView
         android:id="@+id/row_title"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
+        android:layout_marginStart="4dp"
         android:textSize="12sp"
         android:textStyle="bold"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textColor="#1D1B20" />
+        android:textColor="@color/widget_title" />
 
     <TextView
         android:id="@+id/row_location"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginStart="4dp"
-        android:textSize="10sp"
+        android:textSize="@dimen/widget_sub_size"
         android:maxLines="1"
         android:ellipsize="end"
-        android:textColor="#49454E" />
+        android:textColor="@color/widget_sub" />
 </LinearLayout>

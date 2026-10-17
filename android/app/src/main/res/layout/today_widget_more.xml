@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 「还有 N 节」尾行 -->
+<!-- 「还有 N 节」尾行：左对齐、次要色、不占色条 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="vertical"
-    android:paddingTop="2dp">
+    android:layout_marginTop="2dp"
+    android:orientation="vertical">
 
     <TextView
         android:id="@+id/more_text"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textSize="10sp"
-        android:textColor="#49454E" />
+        android:textSize="@dimen/widget_sub_size"
+        android:textColor="@color/widget_sub" />
 </LinearLayout>

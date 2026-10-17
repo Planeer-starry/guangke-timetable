@@ -1,5 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件共享设计 token（亮色配色）。与 values-night 成对，禁止布局里写死颜色。 -->
 <resources>
-    <!-- 「今日课程」卡片背景（surfaceContainerLow 亮色） -->
-    <color name="widget_today_bg">#F7F2FA</color>
+    <!-- 卡片背景 -->
+    <color name="widget_bg">#F2F4F5</color>
+    <!-- 主文字（课名） -->
+    <color name="widget_title">#1A2027</color>
+    <!-- 次要文字（时间/地点/表头） -->
+    <color name="widget_sub">#5C6B73</color>
+    <!-- 强调色（空态色条 / 今日列高亮） -->
+    <color name="widget_accent">#5C6BC0</color>
+    <!-- 一周总课表：无课格子的淡色底 -->
+    <color name="widget_grid_empty">#0F5C6B73</color>
+    <!-- 分隔线（1dp 高 TextView 用） -->
+    <color name="widget_divider">#1F5C6B73</color>
 </resources>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 小组件共享设计 token（尺寸体系）。所有小组件统一引用，禁止布局里写死。 -->
+<resources>
+    <!-- 卡片圆角 -->
+    <dimen name="widget_radius">16dp</dimen>
+    <!-- 卡片内边距 -->
+    <dimen name="widget_padding">12dp</dimen>
+    <!-- 左侧课程色条宽 -->
+    <dimen name="widget_accent_width">4dp</dimen>
+    <!-- 色条与文字区间距 -->
+    <dimen name="widget_accent_margin">10dp</dimen>
+    <!-- 主标题字号（课名） -->
+    <dimen name="widget_title_size">14sp</dimen>
+    <!-- 次要文字字号（时间/地点） -->
+    <dimen name="widget_sub_size">11sp</dimen>
+    <!-- 表头字号（「下节课」/ 日期 · 周次） -->
+    <dimen name="widget_header_size">11sp</dimen>
+    <!-- 一周总课表网格格内字号 -->
+    <dimen name="widget_grid_cell_size">9sp</dimen>
+</resources>

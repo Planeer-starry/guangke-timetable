@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 一周总课表的格子背景：透明底 + 4dp 小圆角（底色由 Kotlin 按课程色/空格色设置） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@android:color/transparent" />
+    <corners android:radius="4dp" />
+</shape>

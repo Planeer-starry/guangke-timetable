@@ -1,54 +1,59 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  「下节课」小组件布局。
+  「下节课」小组件（2 行高）。与「今日课程」同一设计语言：
+  左侧 4dp 色条 + 右侧 header / title / sub 三行，全部引用共享 token。
 
-  ⚠️ RemoteViews 只允许「被 @RemoteView 标注的控件」白名单。
-     android.view.View 不在白名单里 —— 用它做色块会导致宿主机（启动器）
-     inflation 抛 InflateException，桌面显示「载入窗口小部件时出现问题」。
-     所以色块改用 TextView（白名单内），只给背景色、不设文字。
-
-  布局用横排：左侧 4dp 色条 + 右侧两行文字。
-  （竖排在 180×60dp 的最小尺寸下会被压扁。）
+  ⚠️ RemoteViews 只允许「被 @RemoteView 标注的控件」白名单，
+     色条用 TextView（白名单内），只给背景色、不设文字。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:background="#FF263238"
-    android:padding="10dp">
+    android:background="@drawable/widget_card_bg"
+    android:padding="@dimen/widget_padding">
 
     <TextView
-        android:id="@+id/widget_color"
-        android:layout_width="4dp"
+        android:id="@+id/next_color"
+        android:layout_width="@dimen/widget_accent_width"
         android:layout_height="match_parent"
-        android:background="#FF5C6BC0" />
+        android:background="@color/widget_accent" />
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="10dp"
+        android:layout_marginStart="@dimen/widget_accent_margin"
         android:orientation="vertical">
 
         <TextView
-            android:id="@+id/widget_title"
+            android:id="@+id/next_header"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="@dimen/widget_header_size"
+            android:textColor="@color/widget_sub"
+            android:maxLines="1"
+            android:text="下节课" />
+
+        <TextView
+            android:id="@+id/next_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="14sp"
+            android:textSize="@dimen/widget_title_size"
             android:textStyle="bold"
-            android:textColor="#FFFFFFFF"
+            android:textColor="@color/widget_title"
             android:maxLines="1"
             android:ellipsize="end"
             android:text="打开 App 同步课表" />
 
         <TextView
-            android:id="@+id/widget_subtitle"
+            android:id="@+id/next_sub"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
-            android:textSize="11sp"
-            android:textColor="#B3FFFFFF"
+            android:textSize="@dimen/widget_sub_size"
+            android:textColor="@color/widget_sub"
             android:maxLines="1"
             android:ellipsize="end" />
     </LinearLayout>
