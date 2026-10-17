@@ -21,8 +21,7 @@ class SettingsService {
   static const String _keyWeekOverride = 'week_override';
   static const String _keyThemeMode = 'theme_mode';
 
-  /// 用户手动覆盖的当前查看周次；null 表示未覆盖（跟随学期计算）。
-  /// 这只是「临时浏览位置」，不是学期参数。
+  /// 用户主动固定显示的周次；null 表示跟随日历（默认）。
   int? get weekOverride => _prefs.getInt(_keyWeekOverride);
 
   /// 写入周次覆盖；传 null 表示清除覆盖。
