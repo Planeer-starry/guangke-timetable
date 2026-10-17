@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- ⚠️ 已废弃：所有小组件背景统一改用 widget_card_bg.xml（任务 G）。
-     本文件不再被任何布局引用，仅为避免悬空资源引用保留，可安全删除。 -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-    <solid android:color="@color/widget_bg" />
-    <corners android:radius="@dimen/widget_radius" />
-</shape>
