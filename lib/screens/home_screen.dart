@@ -1,9 +1,19 @@
-import 'package:flutter/material.dart';
+import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:timetable/models/course.dart';
+import 'package:timetable/models/course_override.dart';
+import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
+import 'package:timetable/screens/import_preview_screen.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/utils/timetable_importer.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/utils/week_math.dart';
 import 'package:timetable/widgets/course_detail_sheet.dart';
@@ -12,7 +22,7 @@ import 'package:timetable/widgets/week_grid.dart';
 /// 周课表主页面。
 ///
 /// 业务逻辑不写在 build 里：取某周课程用 timetable_query.coursesForWeek，
-/// 算当前周次用 week_math.weekOfDate。
+/// 算当前周次用 week_math.weekOfDate，导入解析用 timetable_importer。
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     super.key,
@@ -106,10 +116,155 @@ class _HomeScreenState extends State<HomeScreen> {
     _displayWeek.value = _effectiveWeek(updated);
   }
 
-  void _showComingSoon(BuildContext context) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(const SnackBar(content: Text('导入功能即将上线，敬请期待')));
+  // ───────────────────────── 导入流程 ─────────────────────────
+
+  /// 打开导入入口（文件 / 剪贴板）→ 解析 → 预览 → 确认应用。
+  Future<void> _startImport() async {
+    final String? source = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            ListTile(
+              leading: const Icon(Icons.folder_open),
+              title: const Text('从文件导入（.json）'),
+              onTap: () => Navigator.of(context).pop('file'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_paste),
+              title: const Text('从剪贴板导入'),
+              onTap: () => Navigator.of(context).pop('clipboard'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (source == null || !mounted) {
+      return;
+    }
+    final String? content = source == 'file'
+        ? await _readPickedFile()
+        : await _readClipboard();
+    if (content == null || !mounted) {
+      return;
+    }
+    await _parseAndPreview(content);
   }
+
+  Future<String?> _readPickedFile() async {
+    final List<PlatformFile> picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['json'],
+    );
+    final String? path = picked.isEmpty ? null : picked.single.path;
+    if (path == null) {
+      return null;
+    }
+    try {
+      return await File(path).readAsString();
+    } catch (error) {
+      if (!mounted) {
+        return null;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('读取文件失败：$error')));
+      return null;
+    }
+  }
+
+  Future<String?> _readClipboard() async {
+    final ClipboardData? clipboard = await Clipboard.getData('text/plain');
+    final String? text = clipboard?.text;
+    if (text == null || text.trim().isEmpty) {
+      if (!mounted) {
+        return null;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('剪贴板里没有内容')));
+      return null;
+    }
+    return text;
+  }
+
+  Future<void> _parseAndPreview(String content) async {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(content);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('不是有效的 JSON：$error')));
+      return;
+    }
+    if (decoded is! Map<String, dynamic>) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('JSON 顶层必须是对象')));
+      return;
+    }
+    final ImportResult result = parseImportedTimetable(decoded);
+    if (!result.isSuccessful) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.error ?? '未识别到任何课程，请检查文件内容')),
+      );
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final List<Course>? confirmed = await Navigator.of(context)
+        .push<List<Course>>(
+          MaterialPageRoute<List<Course>>(
+            builder: (_) => ImportPreviewScreen(result: result),
+          ),
+        );
+    if (confirmed == null || confirmed.isEmpty) {
+      return;
+    }
+    await _applyImported(confirmed);
+  }
+
+  /// 确认导入：**全量替换** courses/overrides（跨学期隔离，绝不与旧课合并）。
+  Future<void> _applyImported(List<Course> courses) async {
+    final TimetableData current = _data.value;
+    final TimetableData updated = TimetableData(
+      schema: current.schema,
+      meta: current.meta,
+      periods: Period.defaults,
+      courses: courses,
+      overrides: const <CourseOverride>[],
+    );
+    try {
+      await widget.storage.save(updated);
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      return;
+    }
+    _data.value = updated;
+    if (!current.semesterConfigured && mounted) {
+      // 导入成功但学期未配置：明确提示并引导设置，避免用户误以为导入失败
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('导入成功，共 ${courses.length} 门课。请先设置学期开始日才能查看课表'),
+          action: SnackBarAction(label: '去设置', onPressed: _openSemesterSetup),
+        ),
+      );
+    }
+  }
+
+  // ───────────────────────── 界面 ─────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -124,6 +279,11 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
         actions: <Widget>[
+          IconButton(
+            tooltip: '导入课表',
+            icon: const Icon(Icons.upload_file),
+            onPressed: _startImport,
+          ),
           IconButton(
             tooltip: '设置学期',
             icon: const Icon(Icons.settings),
@@ -234,8 +394,8 @@ class _HomeScreenState extends State<HomeScreen> {
           const Text('还没有课表'),
           const SizedBox(height: 24),
           FilledButton.tonal(
-            onPressed: () => _showComingSoon(context),
-            child: const Text('导入课表（敬请期待）'),
+            onPressed: _startImport,
+            child: const Text('导入课表'),
           ),
         ],
       ),
