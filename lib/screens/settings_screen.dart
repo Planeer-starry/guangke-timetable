@@ -235,7 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ListTile(
           leading: const Icon(Icons.upload_file),
           title: const Text('导入课表'),
-          subtitle: const Text('从 JSON 文件或剪贴板导入，将替换当前课表'),
+          subtitle: const Text('支持教务 Excel / JSON 文件 / 剪贴板，将替换当前课表'),
           onTap: () => startImportFlow(
             context,
             storage: widget.storage,

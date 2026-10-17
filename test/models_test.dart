@@ -80,8 +80,9 @@ void main() {
     });
 
     test('JSON 里写 "0001-01-01" → 归一成哨兵值、未配置', () {
-      final Map<String, dynamic> raw =
-          TimetableData.empty().toJson().cast<String, dynamic>();
+      final Map<String, dynamic> raw = TimetableData.empty()
+          .toJson()
+          .cast<String, dynamic>();
       (raw['meta'] as Map<String, dynamic>)['week1Monday'] = '0001-01-01';
       final TimetableData restored = TimetableData.fromJson(raw);
       expect(restored.semesterConfigured, isFalse);

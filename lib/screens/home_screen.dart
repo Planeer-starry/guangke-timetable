@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:timetable/constants/app_config.dart';
+import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/import_flow.dart';
@@ -12,6 +13,7 @@ import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/timetable_query.dart';
+import 'package:timetable/utils/week_mask.dart';
 import 'package:timetable/utils/week_math.dart';
 import 'package:timetable/widgets/course_detail_sheet.dart';
 import 'package:timetable/widgets/week_grid.dart';
@@ -347,18 +349,69 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       occurrences: occurrences,
                       weekMonday: monday,
                       isCurrentWeek: isCurrentWeek,
-                      onCourseTap: (CourseOccurrence occurrence) =>
-                          showCourseDetailSheet(
-                            context,
-                            occurrence: occurrence,
-                            periods: data.periods,
-                          ),
+                      onCellTap: (List<CourseOccurrence> cell) =>
+                          _openCell(context, cell, data.periods),
                     ),
             ),
           ],
         );
       },
     );
+  }
+
+  /// 点击课程格：单课直接进详情；多课（教务导出的分班/选项课）先弹选择列表。
+  Future<void> _openCell(
+    BuildContext context,
+    List<CourseOccurrence> cell,
+    List<Period> periods,
+  ) async {
+    if (cell.length == 1) {
+      showCourseDetailSheet(context, occurrence: cell.single, periods: periods);
+      return;
+    }
+    final CourseOccurrence?
+    picked = await showModalBottomSheet<CourseOccurrence>(
+      context: context,
+      builder: (BuildContext sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '这一格有 ${cell.length} 门课（分班 / 选项课）',
+                  style: Theme.of(sheetContext).textTheme.titleSmall,
+                ),
+              ),
+            ),
+            for (final CourseOccurrence occurrence in cell)
+              ListTile(
+                leading: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Color(occurrence.course.colorValue),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                title: Text(occurrence.course.name),
+                subtitle: Text(
+                  '${occurrence.location.isEmpty ? '地点未定' : occurrence.location}'
+                  ' · ${formatWeekRanges(weeksFromWeekMask(occurrence.course.weekMask))}',
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(occurrence),
+              ),
+          ],
+        ),
+      ),
+    );
+    // 跨 await 后使用 BuildContext 必须检查 context.mounted，
+    // 不能用 State.mounted（lint: use_build_context_synchronously）
+    if (picked != null && context.mounted) {
+      showCourseDetailSheet(context, occurrence: picked, periods: periods);
+    }
   }
 
   Widget _buildWeekBar(BuildContext context, int week, TimetableData data) {

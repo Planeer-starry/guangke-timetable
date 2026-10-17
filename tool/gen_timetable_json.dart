@@ -15,7 +15,9 @@ import 'package:timetable/utils/timetable_importer.dart';
 
 void main(List<String> args) {
   if (args.length < 2) {
-    stderr.writeln('用法: dart run tool/gen_timetable_json.dart <输入> <输出> [week1Monday]');
+    stderr.writeln(
+      '用法: dart run tool/gen_timetable_json.dart <输入> <输出> [week1Monday]',
+    );
     exit(2);
   }
   final String input = args[0];
@@ -52,8 +54,10 @@ void main(List<String> args) {
     '✅ 课程 ${result.courses.length} 门，跳过 ${result.skippedCount} 条 → $output',
   );
   for (final course in result.courses.take(5)) {
-    stdout.writeln('   · ${course.name} 周${course.dayWeek} '
-        '第${course.sectionStart}-${course.sectionEnd}节 '
-        'weeks=${course.weekMask}');
+    stdout.writeln(
+      '   · ${course.name} 周${course.dayWeek} '
+      '第${course.sectionStart}-${course.sectionEnd}节 '
+      'weeks=${course.weekMask}',
+    );
   }
 }

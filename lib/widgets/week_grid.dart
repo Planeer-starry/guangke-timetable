@@ -17,14 +17,17 @@ class WeekGrid extends StatelessWidget {
     required this.occurrences,
     required this.weekMonday,
     required this.isCurrentWeek,
-    required this.onCourseTap,
+    required this.onCellTap,
   });
 
   final List<Period> periods;
   final List<CourseOccurrence> occurrences;
   final DateTime weekMonday;
   final bool isCurrentWeek;
-  final ValueChanged<CourseOccurrence> onCourseTap;
+
+  /// 点击课程格；参数是**该格全部课程**（分班/选项课一格多门），
+  /// 单门时长度为 1，多门时由上层弹选择列表。
+  final ValueChanged<List<CourseOccurrence>> onCellTap;
 
   /// 每一节的高度。
   static const double rowHeight = 64;
@@ -175,6 +178,19 @@ class WeekGrid extends StatelessWidget {
     final List<CourseOccurrence> dayCourses = occurrences
         .where((CourseOccurrence o) => o.dayWeek == dayWeek)
         .toList();
+    // 同格多课（教务导出的分班/选项课）：按 (节次起, 节止) 分组，
+    // 主显第一门 + "+N" 角标；部分重叠的课保持原绘制顺序（后画盖前画）。
+    // key 用 Dart record（不再用 '|' 拼字符串）。
+    final Map<(int, int), List<CourseOccurrence>> cells =
+        <(int, int), List<CourseOccurrence>>{};
+    for (final CourseOccurrence occurrence in dayCourses) {
+      cells
+          .putIfAbsent((
+            occurrence.sectionStart,
+            occurrence.sectionEnd,
+          ), () => <CourseOccurrence>[])
+          .add(occurrence);
+    }
     return Expanded(
       child: Stack(
         children: <Widget>[
@@ -195,19 +211,20 @@ class WeekGrid extends StatelessWidget {
               ],
             ),
           ),
-          for (final CourseOccurrence occurrence in dayCourses)
+          for (final List<CourseOccurrence> cell in cells.values)
             Positioned(
-              top: (occurrence.sectionStart - 1) * rowHeight,
+              top: (cell.first.sectionStart - 1) * rowHeight,
               left: 1,
               right: 1,
               height:
-                  (occurrence.sectionEnd - occurrence.sectionStart + 1) *
+                  (cell.first.sectionEnd - cell.first.sectionStart + 1) *
                       rowHeight -
                   2,
               child: CourseBlock(
-                occurrence: occurrence,
+                occurrence: cell.first,
                 periods: periods,
-                onTap: () => onCourseTap(occurrence),
+                extraCount: cell.length - 1,
+                onTap: () => onCellTap(cell),
               ),
             ),
         ],

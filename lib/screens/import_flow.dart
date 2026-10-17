@@ -1,22 +1,25 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:excel_plus/excel_plus.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:timetable/models/course.dart';
 import 'package:timetable/models/course_override.dart';
 import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
+import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/screens/import_preview_screen.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/widget_service.dart';
+import 'package:timetable/utils/jwxt_excel_importer.dart';
 import 'package:timetable/utils/timetable_importer.dart';
 
 /// 课表导入完整流程（首页与设置页共用）：
-/// 选来源（文件 / 剪贴板）→ 读内容 → 解析 → 预览 → 确认后**全量替换**。
+/// 选来源（JSON 文件 / 剪贴板 / 教务 Excel）→ 读内容 → 解析 → 预览 →
+/// 确认后**全量替换**（教务 Excel 还会自动填写学期三件套）。
 ///
 /// [onDataChanged] 在每次课表数据落盘并更新 [data] 后回调
 /// （含导入后顺手设置学期的场景），首页用它重算浏览周次。
@@ -55,6 +58,12 @@ class _ImportFlow {
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
             ListTile(
+              leading: const Icon(Icons.table_view),
+              title: const Text('从教务 Excel 导入（.xls / .xlsx）'),
+              subtitle: const Text('教务系统导出的课表，可自动识别学期'),
+              onTap: () => Navigator.of(sheetContext).pop('jwxt'),
+            ),
+            ListTile(
               leading: const Icon(Icons.folder_open),
               title: const Text('从文件导入（.json）'),
               onTap: () => Navigator.of(sheetContext).pop('file'),
@@ -71,14 +80,90 @@ class _ImportFlow {
     if (source == null || !context.mounted) {
       return;
     }
-    final String? content = source == 'file'
-        ? await _readPickedFile()
-        : await _readClipboard();
-    if (content == null || !context.mounted) {
+    switch (source) {
+      case 'jwxt':
+        await _importJwxtExcel();
+      case 'file':
+        final String? content = await _readPickedFile();
+        if (content != null && context.mounted) {
+          await _parseAndPreviewJson(content);
+        }
+      case 'clipboard':
+        final String? content = await _readClipboard();
+        if (content != null && context.mounted) {
+          await _parseAndPreviewJson(content);
+        }
+    }
+  }
+
+  // ───────────────────── 教务 Excel 导入 ─────────────────────
+
+  /// 选 .xls/.xlsx → 读字节 → excel_plus 解码 → 纯函数解析 → 预览。
+  Future<void> _importJwxtExcel() async {
+    final List<PlatformFile> picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['xls', 'xlsx'],
+    );
+    if (picked.isEmpty || !context.mounted) {
       return;
     }
-    await _parseAndPreview(content);
+    final PlatformFile file = picked.single;
+
+    // file_picker 13.x 的 PlatformFile 是抽象类，**没有 bytes 字段**，
+    // 统一用 readAsBytes() 读取（内部会处理 path / blob / content URI）。
+    final Uint8List bytes;
+    try {
+      bytes = await file.readAsBytes();
+    } catch (error) {
+      _snack('读取文件失败：$error');
+      return;
+    }
+
+    final JwxtImportResult result;
+    try {
+      final Excel excel = await Excel.decodeBytesAsync(bytes);
+      if (excel.tables.isEmpty) {
+        _snack('表格里没有任何工作表');
+        return;
+      }
+      final Sheet sheet = excel.tables.values.first;
+      // 转成纯字符串矩阵：解析逻辑在 jwxt_excel_importer 里单测，不碰 excel_plus
+      final List<List<String?>> rows = sheet.rows
+          .map(
+            (List<dynamic> row) =>
+                row.map((dynamic cell) => cell?.value?.toString()).toList(),
+          )
+          .toList();
+      result = parseJwxtWorkbook(rows);
+    } catch (error) {
+      _snack('无法解析这个 Excel 文件：$error');
+      return;
+    }
+    if (!result.isSuccessful) {
+      _snack(result.error ?? '未识别到任何课程，请检查文件内容');
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    final ImportConfirmation? confirmed = await Navigator.of(context)
+        .push<ImportConfirmation>(
+          MaterialPageRoute<ImportConfirmation>(
+            builder: (_) => ImportPreviewScreen(
+              courses: result.courses,
+              skippedCount: result.skippedCount,
+              jwxt: result,
+              currentMeta: data.value.meta,
+            ),
+          ),
+        );
+    if (confirmed == null || confirmed.courses.isEmpty) {
+      return;
+    }
+    await _applyImported(confirmed);
   }
+
+  // ───────────────────── JSON 导入（原有路径） ─────────────────────
 
   Future<String?> _readPickedFile() async {
     final List<PlatformFile> picked = await FilePicker.pickFiles(
@@ -115,7 +200,7 @@ class _ImportFlow {
     return text;
   }
 
-  Future<void> _parseAndPreview(String content) async {
+  Future<void> _parseAndPreviewJson(String content) async {
     final Object? decoded;
     try {
       decoded = jsonDecode(content);
@@ -148,26 +233,45 @@ class _ImportFlow {
     if (!context.mounted) {
       return;
     }
-    final List<Course>? confirmed = await Navigator.of(context)
-        .push<List<Course>>(
-          MaterialPageRoute<List<Course>>(
-            builder: (_) => ImportPreviewScreen(result: result),
+    final ImportConfirmation? confirmed = await Navigator.of(context)
+        .push<ImportConfirmation>(
+          MaterialPageRoute<ImportConfirmation>(
+            builder: (_) => ImportPreviewScreen(
+              courses: result.courses,
+              skippedCount: result.skippedCount,
+            ),
           ),
         );
-    if (confirmed == null || confirmed.isEmpty) {
+    if (confirmed == null || confirmed.courses.isEmpty) {
       return;
     }
     await _applyImported(confirmed);
   }
 
+  // ───────────────────── 落盘 ─────────────────────
+
   /// 确认导入：**全量替换** courses/overrides（跨学期隔离，绝不与旧课合并）。
-  Future<void> _applyImported(List<Course> courses) async {
+  ///
+  /// - overrides 按 course.id 引用，而导入的课程 id 全新（c_xxx / jw_xxx），
+  ///   旧 overrides 必然失效，必须同时清空；
+  /// - 教务 Excel 导入若识别到学期三件套，则连同 meta 一起写入
+  ///   （week1Monday / totalWeeks / semesterName），用户不用再手动设学期。
+  Future<void> _applyImported(ImportConfirmation confirmed) async {
     final TimetableData current = data.value;
+    final TimetableMeta meta =
+        confirmed.week1Monday != null && confirmed.totalWeeks != null
+        ? TimetableMeta(
+            school: current.meta.school,
+            semesterName: confirmed.semesterName ?? current.meta.semesterName,
+            week1Monday: confirmed.week1Monday!,
+            totalWeeks: confirmed.totalWeeks!,
+          )
+        : current.meta;
     final TimetableData updated = TimetableData(
       schema: current.schema,
-      meta: current.meta,
+      meta: meta,
       periods: Period.defaults,
-      courses: courses,
+      courses: confirmed.courses,
       overrides: const <CourseOverride>[],
     );
     try {
@@ -181,11 +285,14 @@ class _ImportFlow {
       return;
     }
     _emitUpdated(updated);
-    if (!current.semesterConfigured && context.mounted) {
-      // 导入成功但学期未配置：明确提示并引导设置，避免用户误以为导入失败
+    if (!updated.semesterConfigured && context.mounted) {
+      // 导入成功但学期仍未配置（JSON 路径且从未设置过）：
+      // 明确提示并引导设置，避免用户误以为导入失败
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('导入成功，共 ${courses.length} 门课。请先设置学期开始日才能查看课表'),
+          content: Text(
+            '导入成功，共 ${confirmed.courses.length} 门课。请先设置学期开始日才能查看课表',
+          ),
           action: SnackBarAction(
             label: '去设置',
             onPressed: _openSemesterSetupAfterImport,
@@ -218,5 +325,13 @@ class _ImportFlow {
     data.value = updated;
     WidgetService.refreshAll(updated);
     onDataChanged?.call(updated);
+  }
+
+  void _snack(String message) {
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 }

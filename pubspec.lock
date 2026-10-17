@@ -105,6 +105,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "3.0.7"
+  csv_plus:
+    dependency: transitive
+    description:
+      name: csv_plus
+      sha256: ab70d4231c8e5be91dc22ae3d0b5eff6104e8123c95be33697d07fea238e359d
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "1.12.0"
   cupertino_icons:
     dependency: "direct main"
     description:
@@ -121,6 +129,14 @@ packages:
       url: "https://pub.flutter-io.cn"
     source: hosted
     version: "0.8.0"
+  excel_plus:
+    dependency: "direct main"
+    description:
+      name: excel_plus
+      sha256: d9165b6e22d65017538c574643cb598f58392d95f79ea69d117ec4f812409d0c
+      url: "https://pub.flutter-io.cn"
+    source: hosted
+    version: "2.29.0"
   fake_async:
     dependency: transitive
     description:
