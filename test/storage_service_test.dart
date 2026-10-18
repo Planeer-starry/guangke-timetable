@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/utils/course_color.dart';
 
 void main() {
   late Directory tempDir;
@@ -180,6 +181,56 @@ void main() {
           .toList();
       expect(names.any((String p) => p.endsWith('.tmp')), isFalse);
       expect(names.any((String p) => p.endsWith('.bak')), isFalse);
+    });
+
+    group('配色迁移（调色板更新）', () {
+      const int oldPaletteColor = 0xFFEF5350; // 旧调色板首色「红」，已不在新表内
+
+      Future<void> writeTimetableJson(int colorValue) async {
+        await File(filePath()).writeAsString(
+          jsonEncode(<String, dynamic>{
+            'schema': 1,
+            'meta': <String, dynamic>{
+              'school': '广东科技学院',
+              'semesterName': '2026-2027 第一学期',
+              'week1Monday': '2026-09-07',
+              'totalWeeks': 20,
+            },
+            'courses': <dynamic>[
+              <String, dynamic>{
+                'id': 'c_001',
+                'name': '计算机网络',
+                'colorValue': colorValue,
+                'dayWeek': 1,
+                'sectionStart': 1,
+                'sectionEnd': 2,
+                'weekMask': 3,
+              },
+            ],
+          }),
+        );
+      }
+
+      test('旧调色板的 colorValue → load 时按课名重新取色', () async {
+        await writeTimetableJson(oldPaletteColor);
+
+        final TimetableData loaded = await newService().load();
+
+        expect(
+          loaded.courses.single.colorValue,
+          colorValueFromName('计算机网络'),
+        );
+        expect(isPaletteColor(loaded.courses.single.colorValue), isTrue);
+      });
+
+      test('已是当前调色板的 colorValue → load 原样保留', () async {
+        final int current = colorValueFromName('计算机网络');
+        await writeTimetableJson(current);
+
+        final TimetableData loaded = await newService().load();
+
+        expect(loaded.courses.single.colorValue, current);
+      });
     });
   });
 }

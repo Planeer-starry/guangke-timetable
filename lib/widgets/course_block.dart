@@ -68,11 +68,11 @@ class CourseBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color color = Color(occurrence.course.colorValue);
-    // 亮色课块（调色板里的橙 #FFA726 lum=0.49、浅绿 #9CCC65 lum=0.45）
-    // 上白字对比度只有 ~2:1，远低于 WCAG 的 4.5:1，改用深色字（对比 ~10:1）。
-    // 阈值 0.42 经调色板实算标定：只有橙、浅绿会触发，其余（蓝/紫/绿/红/青）
-    // 白字对比 2.6~6.9，保持白字。
-    final bool onLightColor = color.computeLuminance() > 0.42;
+    // 文字色按背景亮度自适应：白字可用性下限取 WCAG 大字号 AA 的 3:1，
+    // 对应亮度阈值 0.28（白字对比 1.05/(lum+0.05) >= 3.2）。
+    // 超过阈值的浅色块（草绿、琥珀等）改用深色字，对比可达 6.7:1。
+    // 调色板本身因此可以保持色相清晰，不必为了白字可读而全部压暗。
+    final bool onLightColor = color.computeLuminance() > 0.28;
     final Color nameColor = onLightColor
         ? Colors.black.withValues(alpha: 0.87)
         : Colors.white;

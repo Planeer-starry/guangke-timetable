@@ -3,7 +3,9 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:timetable/models/course.dart';
 import 'package:timetable/models/timetable_data.dart';
+import 'package:timetable/utils/course_color.dart';
 
 /// 课表文件读写服务。
 ///
@@ -48,12 +50,38 @@ class StorageService {
       if (decoded is! Map<String, dynamic>) {
         throw const FormatException('课表文件顶层不是 JSON 对象');
       }
-      return TimetableData.fromJson(decoded);
+      return _migratePalette(TimetableData.fromJson(decoded));
     } catch (error, stackTrace) {
       debugPrint('课表文件解析失败，已备份损坏文件：$error\n$stackTrace');
       await _backupCorruptFile(file);
       return TimetableData.empty();
     }
+  }
+
+  /// 配色迁移：调色板更新后，旧数据里保存的 colorValue 不再属于当前调色板，
+  /// 这里统一按课名重新取色，让配色升级在旧课表上立刻生效。
+  ///
+  /// 放在 StorageService 而不是 Course.fromJson：
+  /// 模型的 JSON 往返必须保持字段原值（有单测守着），
+  /// 「升级旧数据」是持久层的职责。
+  /// 全部颜色都已在调色板内时直接返回原对象，不做无谓重建。
+  static TimetableData _migratePalette(TimetableData data) {
+    final bool allCurrent = data.courses.every(
+      (Course course) => isPaletteColor(course.colorValue),
+    );
+    if (allCurrent) {
+      return data;
+    }
+    return data.copyWith(
+      courses: <Course>[
+        for (final Course course in data.courses)
+          isPaletteColor(course.colorValue)
+              ? course
+              : course.copyWith(
+                  colorValue: colorValueFromName(course.name),
+                ),
+      ],
+    );
   }
 
   /// 把损坏的课表文件重命名保留；重命名失败也不影响返回空课表。
