@@ -1,7 +1,7 @@
 // 开发辅助脚本：把「按周展开」的教务 JSON 转成 App 的存储格式 timetable.json。
 //
 // 用途：真机测试时快速构造数据，或在数据被清空后恢复。
-// 用法：dart run tool/gen_timetable_json.dart <输入 json> <输出 json> [week1Monday]
+// 用法：dart run tools/gen_timetable_json.dart <输入 json> <输出 json> [week1Monday]
 //
 // 注意：本脚本只在电脑上跑，不参与 App 运行时。
 import 'dart:convert';
@@ -16,7 +16,7 @@ import 'package:timetable/utils/timetable_importer.dart';
 void main(List<String> args) {
   if (args.length < 2) {
     stderr.writeln(
-      '用法: dart run tool/gen_timetable_json.dart <输入> <输出> [week1Monday]',
+      '用法: dart run tools/gen_timetable_json.dart <输入> <输出> [week1Monday]',
     );
     exit(2);
   }

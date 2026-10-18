@@ -1,6 +1,6 @@
 // 开发辅助：用真实教务 .xls 文件验证完整导入管线（不含 UI）。
 //
-// 用法：dart run tool/verify_jwxt_xls.dart <xls 路径>
+// 用法：dart run tools/verify_jwxt_xls.dart <xls 路径>
 //
 // 验证链路：excel_plus 解码 .xls → parseJwxtWorkbook 解析 → 打印课程与元信息。
 // 这个脚本不参与 App 运行时，也不放进 test/（避免依赖外部文件导致别人跑不过）。
@@ -14,7 +14,7 @@ import 'package:timetable/utils/week_mask.dart';
 
 Future<void> main(List<String> args) async {
   if (args.isEmpty) {
-    stderr.writeln('用法: dart run tool/verify_jwxt_xls.dart <xls 路径>');
+    stderr.writeln('用法: dart run tools/verify_jwxt_xls.dart <xls 路径>');
     exit(2);
   }
   final File file = File(args[0]);

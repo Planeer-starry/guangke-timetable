@@ -1,4 +1,16 @@
-# 发布 APK（tools\release.ps1）
+# 开发辅助脚本
+
+`tools/` 下有三个脚本，都不参与 App 运行时。
+
+| 脚本 | 用途 |
+|---|---|
+| `release.ps1` | 一条命令构建可分发、签名正确的 release APK |
+| `verify_jwxt_xls.dart` | 用真实教务 `.xls` 跑一遍导入管线，验证解析结果 |
+| `gen_timetable_json.dart` | 把「按周展开」的教务 JSON 转成 App 的存储格式（测试/恢复数据用） |
+
+---
+
+# 1. 发布 APK（`tools\release.ps1`）
 
 一条命令生成可以直接发给同学安装的 APK（已签名、可分发）。
 
@@ -40,7 +52,7 @@
 
 ```
 release\guangke-timetable-<版本号>.apk
-（例如 release\guangke-timetable-1.0.0+1.apk）
+（例如 release\guangke-timetable-1.1.0+2.apk）
 ```
 
 把这个文件通过微信 / QQ / 网盘发给同学即可。
@@ -64,3 +76,35 @@ release 签名用的密钥文件路径与密码，都记录在 `android\key.prop
 
 - 把 keystore 文件和 `android\key.properties` 一起拷贝到 U 盘 / 私有网盘
 - 这两个文件**不要**提交进 git，也**不要**发给别人
+
+---
+
+# 2. 验证教务 Excel 解析（`tools\verify_jwxt_xls.dart`）
+
+不想在手机上试导入、只想确认解析对不对时用。
+
+```powershell
+dart run tools\verify_jwxt_xls.dart "E:\path\to\课表.xls"
+```
+
+输出：文件大小、工作表行数、解析出的课程数、学期名 / 第一周周一 / 总周数，
+以及每门课的「星期、节次、周次、地点、教师、weekMask」。
+
+**用它可以快速判断某个学校的导出文件能不能被正确解析。**
+
+---
+
+# 3. 教务 JSON 转 App 格式（`tools\gen_timetable_json.dart`）
+
+把「按周展开」的教务 JSON 转成 App 的存储格式 `timetable.json`。
+主要用于构造测试数据，或在数据被清空后从导出的 JSON 恢复。
+
+```powershell
+dart run tools\gen_timetable_json.dart <输入.json> <输出.json> [第一周周一]
+```
+
+例如：
+
+```powershell
+dart run tools\gen_timetable_json.dart in.json out.json 2026-08-31
+```
