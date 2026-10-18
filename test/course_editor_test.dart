@@ -346,6 +346,189 @@ void main() {
     });
   });
 
+  group('coursesNamed / deleteCoursesNamed（按课名批量删除）', () {
+    List<Course> japaneseCourses() {
+      return <Course>[
+        courseOf(
+          'jw_001',
+          name: '大学日语Ⅰ',
+          dayWeek: 2,
+          sectionStart: 1,
+          sectionEnd: 2,
+          weekMask: 0xAAAA,
+        ),
+        courseOf(
+          'jw_002',
+          name: '大学日语Ⅰ',
+          dayWeek: 2,
+          sectionStart: 3,
+          sectionEnd: 4,
+          weekMask: 0xAAAA,
+        ),
+        courseOf(
+          'jw_003',
+          name: '大学日语Ⅰ',
+          dayWeek: 3,
+          sectionStart: 1,
+          sectionEnd: 2,
+        ),
+        courseOf(
+          'jw_004',
+          name: '大学日语Ⅰ',
+          dayWeek: 3,
+          sectionStart: 3,
+          sectionEnd: 4,
+        ),
+      ];
+    }
+
+    test('coursesNamed 返回同名全部（4 条不同星期/节次）', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[
+          ...japaneseCourses(),
+          courseOf('c_100', name: '计算机网络', dayWeek: 5),
+        ],
+      );
+
+      final List<Course> same = CourseEditor.coursesNamed(data, '大学日语Ⅰ');
+
+      expect(same.length, 4);
+      expect(same.map((Course c) => c.id).toSet(), <String>{
+        'jw_001',
+        'jw_002',
+        'jw_003',
+        'jw_004',
+      });
+    });
+
+    test('coursesNamed 不做模糊匹配，trim 后完全相等', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[
+          courseOf('c_001', name: '高等数学BⅠ'),
+          courseOf('c_002', name: '高等数学BⅡ'),
+        ],
+      );
+
+      // Ⅰ ≠ Ⅱ：绝不能把 BⅡ 当成 BⅠ 删掉
+      expect(CourseEditor.coursesNamed(data, '高等数学BⅠ').length, 1);
+      expect(CourseEditor.coursesNamed(data, '高等数学BⅠ').single.id, 'c_001');
+      // 查询名带首尾空格 → trim 后匹配
+      expect(CourseEditor.coursesNamed(data, ' 高等数学BⅠ ').length, 1);
+      // 数据名带空格同样 trim 后匹配
+      final TimetableData padded = dataOf(
+        courses: <Course>[courseOf('c_003', name: ' 大学物理 ')],
+      );
+      expect(CourseEditor.coursesNamed(padded, '大学物理').length, 1);
+    });
+
+    test('deleteCoursesNamed 删完 courses 里没有该名字', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[
+          ...japaneseCourses(),
+          courseOf('c_100', name: '计算机网络', dayWeek: 5),
+        ],
+      );
+
+      final TimetableData updated = CourseEditor.deleteCoursesNamed(
+        data,
+        '大学日语Ⅰ',
+      );
+
+      expect(updated.courses.length, 1);
+      expect(updated.courses.single.name, '计算机网络');
+      expect(
+        updated.courses.any((Course c) => c.name.trim() == '大学日语Ⅰ'),
+        isFalse,
+      );
+      // 原数据不被改动
+      expect(data.courses.length, 5);
+    });
+
+    test('deleteCoursesNamed 连带删同名课的 overrides，保留其他课的', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[
+          ...japaneseCourses(),
+          courseOf('c_100', name: '计算机网络', dayWeek: 5),
+        ],
+        overrides: <CourseOverride>[
+          CourseOverride(
+            courseId: 'jw_001',
+            week: 8,
+            dayWeek: 4,
+            sectionStart: 1,
+            sectionEnd: 2,
+            location: '实验楼B203',
+          ),
+          CourseOverride(
+            courseId: 'jw_004',
+            week: 9,
+            dayWeek: 5,
+            sectionStart: 7,
+            sectionEnd: 8,
+            location: '教学楼D402',
+          ),
+          CourseOverride(
+            courseId: 'c_100',
+            week: 8,
+            dayWeek: 1,
+            sectionStart: 3,
+            sectionEnd: 4,
+            location: '教学楼A101',
+          ),
+        ],
+      );
+
+      final TimetableData updated = CourseEditor.deleteCoursesNamed(
+        data,
+        '大学日语Ⅰ',
+      );
+
+      // 同名课的 overrides 全删，其他课的保留
+      expect(updated.overrides.length, 1);
+      expect(updated.overrides.single.courseId, 'c_100');
+    });
+
+    test('deleteCoursesNamed 只删同名，其他课程不受影响', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[
+          ...japaneseCourses(),
+          courseOf(
+            'c_100',
+            name: '大学英语Ⅰ',
+            dayWeek: 1,
+            sectionStart: 1,
+            sectionEnd: 2,
+          ),
+          courseOf(
+            'c_101',
+            name: '大学物理C',
+            dayWeek: 4,
+            sectionStart: 5,
+            sectionEnd: 6,
+          ),
+        ],
+      );
+
+      final TimetableData updated = CourseEditor.deleteCoursesNamed(
+        data,
+        '大学日语Ⅰ',
+      );
+
+      expect(updated.courses.length, 2);
+      expect(updated.courses.map((Course c) => c.name).toSet(), <String>{
+        '大学英语Ⅰ',
+        '大学物理C',
+      });
+      // 各字段原样
+      final Course english = updated.courses.firstWhere(
+        (Course c) => c.name == '大学英语Ⅰ',
+      );
+      expect(english.dayWeek, 1);
+      expect(english.sectionStart, 1);
+      expect(english.sectionEnd, 2);
+    });
+  });
+
   group('copyWith 各字段独立生效', () {
     test('Course.copyWith 只改传入字段，id 永远不变', () {
       final Course original = courseOf('c_001');

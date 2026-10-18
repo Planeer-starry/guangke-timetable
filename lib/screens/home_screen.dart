@@ -317,6 +317,74 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _applyCourseUpdate(CourseEditor.deleteCourse(_data.value, course.id));
   }
 
+  /// 批量删除同名课程：教务导出的同一门课常被拆成多条独立 Course
+  /// （如「大学日语Ⅰ」周二/周三各两段），逐条删要多次确认。
+  /// 确认框列出每条记录 → 全删（连带 overrides）→ 落盘。
+  Future<void> _confirmDeleteCoursesNamed(Course course) async {
+    final List<Course> same = CourseEditor.coursesNamed(
+      _data.value,
+      course.name,
+    );
+    if (same.length <= 1) {
+      // 菜单项只在同名 > 1 时显示；此处兜底，理论上走不到
+      _confirmDeleteCourse(course);
+      return;
+    }
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('删除所有同名课程'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text('将删除 ${same.length} 条「${course.name}」记录：'),
+              const SizedBox(height: 8),
+              for (final Course c in same)
+                Text(
+                  '${_dayNames[c.dayWeek - 1]} '
+                  '第${c.sectionStart}-${c.sectionEnd}节 · '
+                  '${c.location.isEmpty ? '地点未定' : c.location}',
+                  style: Theme.of(dialogContext).textTheme.bodySmall,
+                ),
+              const SizedBox(height: 8),
+              const Text('这些记录的所有调课也会一并删除。'),
+            ],
+          ),
+        ),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('全部删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      return;
+    }
+    final bool saved = await _applyCourseUpdate(
+      CourseEditor.deleteCoursesNamed(_data.value, course.name),
+    );
+    if (saved && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('已删除 ${same.length} 条「${course.name}」'),
+          action: SnackBarAction(label: '撤销', onPressed: _undo),
+        ),
+      );
+    }
+  }
+
   // ───────────────────────── 本周停课 / 取消本周调整 ─────────────────────────
 
   /// 打开课程详情 sheet（单课 / 多课选择后共用），
@@ -440,6 +508,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
               title: const Text('移动到…'),
               onTap: () => Navigator.of(sheetContext).pop('move'),
             ),
+            // 同名课程多条（教务按周拆开的同一门课）才提供批量删除；
+            // 只有一条时用普通「删除」即可
+            if (CourseEditor.coursesNamed(
+                  _data.value,
+                  occurrence.course.name,
+                ).length >
+                1)
+              ListTile(
+                leading: Icon(
+                  Icons.delete_sweep,
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+                title: Text(
+                  '删除所有同名课程',
+                  style: TextStyle(
+                    color: Theme.of(sheetContext).colorScheme.error,
+                  ),
+                ),
+                onTap: () => Navigator.of(sheetContext).pop('delete_named'),
+              ),
             ListTile(
               leading: Icon(
                 Icons.delete_outline,
@@ -467,6 +555,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _enterMoveMode(occurrence, week);
     } else if (action == 'delete') {
       _confirmDeleteCourse(occurrence.course);
+    } else if (action == 'delete_named') {
+      _confirmDeleteCoursesNamed(occurrence.course);
     }
   }
 

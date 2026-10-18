@@ -101,4 +101,32 @@ class CourseEditor {
           .toList(),
     );
   }
+
+  /// 找出同名的所有课程（用于批量删除前的确认与展示）。
+  ///
+  /// 名称比较用 **trim 后完全相等**，不做模糊匹配——
+  /// 避免「高等数学BⅠ」误删「高等数学BⅡ」。
+  static List<Course> coursesNamed(TimetableData data, String name) {
+    final String trimmed = name.trim();
+    return data.courses.where((Course c) => c.name.trim() == trimmed).toList();
+  }
+
+  /// 删除所有同名课程，并连带清理它们的 overrides。
+  ///
+  /// 没有同名课程时原样返回。
+  static TimetableData deleteCoursesNamed(TimetableData data, String name) {
+    final Set<String> ids = coursesNamed(
+      data,
+      name,
+    ).map((Course c) => c.id).toSet();
+    if (ids.isEmpty) {
+      return data;
+    }
+    return data.copyWith(
+      courses: data.courses.where((Course c) => !ids.contains(c.id)).toList(),
+      overrides: data.overrides
+          .where((CourseOverride o) => !ids.contains(o.courseId))
+          .toList(),
+    );
+  }
 }
