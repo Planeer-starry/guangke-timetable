@@ -55,4 +55,31 @@ class CourseEditor {
     }
     return 'u_${(max + 1).toString().padLeft(3, '0')}';
   }
+
+  /// 为某门课的某一周设置临时调整（override）。
+  ///
+  /// 按 `(courseId, week)` 匹配：已存在则**原位替换**，
+  /// 保证同一门课同一周只有一条调整，不会重复堆积；不存在则追加。
+  static TimetableData setOverride(
+    TimetableData data,
+    CourseOverride override,
+  ) {
+    bool replaced = false;
+    final List<CourseOverride> next = <CourseOverride>[];
+    for (final CourseOverride existing in data.overrides) {
+      final bool sameKey =
+          existing.courseId == override.courseId &&
+          existing.week == override.week;
+      if (sameKey) {
+        next.add(override);
+        replaced = true;
+      } else {
+        next.add(existing);
+      }
+    }
+    if (!replaced) {
+      next.add(override);
+    }
+    return data.copyWith(overrides: next);
+  }
 }

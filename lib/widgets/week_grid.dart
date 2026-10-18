@@ -16,8 +16,13 @@ import 'package:timetable/widgets/course_block.dart';
 /// 尺寸全部来自 [dimens]（断点令牌，页面顶层算好传入，本 widget 不读
 /// MediaQuery）：
 /// - compact / medium：固定行高，屏幕不够高时整体滚动；
-/// - expanded（平板）：行高按可用高度动态铺满（clamp 64~100），
-///   解决大屏底部大片空白。
+/// - expanded（平板）：行高按可用高度动态铺满（clamp 64~100）。
+///
+/// 移动模式（[isMoving]）：
+/// - 网格主体包一层 GestureDetector（[cellAtOffset] 按坐标算落点），
+///   空白格也能点——平时**不包**，避免吞掉课块的正常点击；
+/// - 课块的 onTap / onLongPress 置 null，tap 手势冒泡到网格层；
+/// - 纵向滚动禁用（与点选手势打架）。
 class WeekGrid extends StatelessWidget {
   const WeekGrid({
     super.key,
@@ -28,6 +33,10 @@ class WeekGrid extends StatelessWidget {
     required this.onCellTap,
     required this.dimens,
     required this.windowSize,
+    this.onCellLongPress,
+    this.isMoving = false,
+    this.movingCourseId,
+    this.onMoveTargetPicked,
   });
 
   final List<Period> periods;
@@ -39,11 +48,40 @@ class WeekGrid extends StatelessWidget {
   /// 单门时长度为 1，多门时由上层弹选择列表。
   final ValueChanged<List<CourseOccurrence>> onCellTap;
 
+  /// 长按课程格 → 上层弹操作菜单（编辑 / 移动 / 删除）。
+  final ValueChanged<List<CourseOccurrence>>? onCellLongPress;
+
   /// 断点尺寸令牌。
   final WeekGridDimens dimens;
 
   /// 窗口断点（透传给 CourseBlock 判断教师行显示）。
   final WindowSize windowSize;
+
+  /// 是否处于「移动课程」模式。
+  final bool isMoving;
+
+  /// 正在被移动的课程 id（该块高亮 primary 边框，其余块半透明）。
+  final String? movingCourseId;
+
+  /// 移动模式下点击（含空白格）的目标落点回调。
+  final void Function(int dayWeek, int sectionStart)? onMoveTargetPicked;
+
+  /// 由网格内点击坐标反算 (星期, 节次)。纯函数，可单测。
+  ///
+  /// 坐标原点是网格主体（不含表头）左上角；越界坐标 clamp 到
+  /// 1..7 / 1..periods，不抛异常。
+  static (int, int) cellAtOffset(
+    Offset local, {
+    required double timeColumnWidth,
+    required double dayColumnWidth,
+    required double rowHeight,
+    required int periods,
+  }) {
+    final int day =
+        ((local.dx - timeColumnWidth) / dayColumnWidth).floor() + 1;
+    final int section = (local.dy / rowHeight).floor() + 1;
+    return (day.clamp(1, 7).toInt(), section.clamp(1, periods).toInt());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,18 +109,48 @@ class WeekGrid extends StatelessWidget {
       children: <Widget>[
         _buildHeader(context),
         Expanded(
-          child: SingleChildScrollView(
-            child: SizedBox(
-              height: periods.length * rowHeight,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _buildTimeColumn(context, rowHeight),
-                  for (int dayWeek = 1; dayWeek <= 7; dayWeek++)
-                    _buildDayColumn(context, dayWeek, rowHeight),
-                ],
-              ),
-            ),
+          // LayoutBuilder 拿网格总宽 → 日列宽（7 列均分），
+          // 供 cellAtOffset 反算落点
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints constraints) {
+              final double dayColumnWidth =
+                  (constraints.maxWidth - dimens.timeColumnWidth) / 7;
+              return SingleChildScrollView(
+                // 移动模式禁纵向滚动，否则和点选落点手势打架
+                physics: isMoving
+                    ? const NeverScrollableScrollPhysics()
+                    : null,
+                child: GestureDetector(
+                  // opaque：空白格（无子组件的区域）也响应点击
+                  behavior: HitTestBehavior.opaque,
+                  // ⚠️ 只在移动模式接管点击；平时 null，
+                  // 不吞课块的正常点击
+                  onTapUp: isMoving && onMoveTargetPicked != null
+                      ? (TapUpDetails details) {
+                          final (int day, int section) = cellAtOffset(
+                            details.localPosition,
+                            timeColumnWidth: dimens.timeColumnWidth,
+                            dayColumnWidth: dayColumnWidth,
+                            rowHeight: rowHeight,
+                            periods: periods.length,
+                          );
+                          onMoveTargetPicked!(day, section);
+                        }
+                      : null,
+                  child: SizedBox(
+                    height: periods.length * rowHeight,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        _buildTimeColumn(context, rowHeight),
+                        for (int dayWeek = 1; dayWeek <= 7; dayWeek++)
+                          _buildDayColumn(context, dayWeek, rowHeight),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -261,6 +329,8 @@ class WeekGrid extends StatelessWidget {
   Widget _buildCourseBlock(List<CourseOccurrence> cell, double rowHeight) {
     final CourseOccurrence first = cell.first;
     final int sections = first.sectionEnd - first.sectionStart + 1;
+    final bool isMovingThis =
+        isMoving && first.course.id == movingCourseId;
     return Positioned(
       top: (first.sectionStart - 1) * rowHeight,
       left: 1,
@@ -270,7 +340,14 @@ class WeekGrid extends StatelessWidget {
         occurrence: first,
         periods: periods,
         extraCount: cell.length - 1,
-        onTap: () => onCellTap(cell),
+        // 移动模式下块自身禁点：InkWell 回调为 null 时不参与手势竞争，
+        // tap 冒泡到外层网格 GestureDetector → 算落点
+        onTap: isMoving ? null : () => onCellTap(cell),
+        onLongPress: isMoving || onCellLongPress == null
+            ? null
+            : () => onCellLongPress!(cell),
+        highlighted: isMovingThis,
+        dimmed: isMoving && !isMovingThis,
         dimens: dimens,
         windowSize: windowSize,
         // 理论高度（不减 2px 边距修正），保证两节连堂恰好命中

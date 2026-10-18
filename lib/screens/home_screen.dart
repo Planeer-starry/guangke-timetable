@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:timetable/constants/app_config.dart';
 import 'package:timetable/models/course.dart';
+import 'package:timetable/models/course_override.dart';
 import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/update_info.dart';
@@ -13,6 +14,7 @@ import 'package:timetable/screens/settings_screen.dart';
 import 'package:timetable/services/course_editor.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/theme/week_grid_dimens.dart';
@@ -22,6 +24,9 @@ import 'package:timetable/utils/week_mask.dart';
 import 'package:timetable/utils/week_math.dart';
 import 'package:timetable/widgets/course_detail_sheet.dart';
 import 'package:timetable/widgets/week_grid.dart';
+
+/// 星期几中文名（下标 = dayWeek - 1），用于移动成功的提示文案。
+const List<String> _dayNames = <String>['一', '二', '三', '四', '五', '六', '日'];
 
 /// 周课表主页面。
 ///
@@ -49,6 +54,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   late final PageController _pageController;
   late final ValueNotifier<UpdateInfo?> _updateInfo;
   bool _updateBannerDismissed = false;
+
+  /// 撤销栈：编辑/删除/新增/移动前压快照，导入/清空后整体清掉。
+  final UndoStack _undoStack = UndoStack();
+
+  /// 正在移动的课（已应用当周 override 后的实际上课信息）。
+  CourseOccurrence? _movingOccurrence;
+
+  /// 移动发起时的周次（「仅本周」调整时写入该周的 override）。
+  int? _movingWeek;
+
+  /// 是否处于「移动课程」模式。
+  bool get _isMoving => _movingOccurrence != null;
 
   @override
   void initState() {
@@ -300,26 +317,313 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _applyCourseUpdate(CourseEditor.deleteCourse(_data.value, course.id));
   }
 
-  /// 编辑/删除统一落盘：保存 → 更新内存 → 刷小组件。
-  /// 三个入口共用，避免同样的三行在 _add/_edit/_delete 里复制三遍。
-  Future<void> _applyCourseUpdate(TimetableData? updated) async {
-    if (updated == null) {
+  // ───────────────────────── 长按菜单 / 移动模式 ─────────────────────────
+
+  /// 长按课程格 → 操作菜单（编辑 / 移动到… / 删除）。
+  /// 多课格（分班/选项课）先弹选择列表，与点击流程一致。
+  Future<void> _openCellMenu(
+    BuildContext context,
+    List<CourseOccurrence> cell,
+    int week,
+  ) async {
+    CourseOccurrence occurrence;
+    if (cell.length == 1) {
+      occurrence = cell.single;
+    } else {
+      final CourseOccurrence? picked = await _pickOccurrence(context, cell);
+      if (picked == null || !context.mounted) {
+        return;
+      }
+      occurrence = picked;
+    }
+    final String? action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (BuildContext sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '「${occurrence.course.name}」',
+                  style: Theme.of(sheetContext).textTheme.titleSmall,
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('编辑'),
+              onTap: () => Navigator.of(sheetContext).pop('edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_with),
+              title: const Text('移动到…'),
+              onTap: () => Navigator.of(sheetContext).pop('move'),
+            ),
+            ListTile(
+              leading: Icon(
+                Icons.delete_outline,
+                color: Theme.of(sheetContext).colorScheme.error,
+              ),
+              title: Text(
+                '删除',
+                style: TextStyle(
+                  color: Theme.of(sheetContext).colorScheme.error,
+                ),
+              ),
+              onTap: () => Navigator.of(sheetContext).pop('delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !context.mounted) {
+      return;
+    }
+    // sheet 已关，再执行动作（与 detail sheet 的约定一致）
+    if (action == 'edit') {
+      _editCourse(occurrence.course);
+    } else if (action == 'move') {
+      _enterMoveMode(occurrence, week);
+    } else if (action == 'delete') {
+      _confirmDeleteCourse(occurrence.course);
+    }
+  }
+
+  /// 多课格（分班/选项课）的选择列表，点击与长按流程共用。
+  Future<CourseOccurrence?> _pickOccurrence(
+    BuildContext context,
+    List<CourseOccurrence> cell,
+  ) {
+    return showModalBottomSheet<CourseOccurrence>(
+      context: context,
+      builder: (BuildContext sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '这一格有 ${cell.length} 门课（分班 / 选项课）',
+                  style: Theme.of(sheetContext).textTheme.titleSmall,
+                ),
+              ),
+            ),
+            for (final CourseOccurrence occurrence in cell)
+              ListTile(
+                leading: Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Color(occurrence.course.colorValue),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                title: Text(occurrence.course.name),
+                subtitle: Text(
+                  '${occurrence.location.isEmpty ? '地点未定' : occurrence.location}'
+                  ' · ${formatWeekRanges(weeksFromWeekMask(occurrence.course.weekMask))}',
+                ),
+                onTap: () => Navigator.of(sheetContext).pop(occurrence),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 进入移动模式：记录被移动的课与发起周次。
+  /// 此后 PageView / 网格滚动 / 课块点击全部禁用，只响应落点选择。
+  void _enterMoveMode(CourseOccurrence occurrence, int week) {
+    setState(() {
+      _movingOccurrence = occurrence;
+      _movingWeek = week;
+    });
+  }
+
+  /// 退出移动模式（取消 / 点回原位 / 完成移动）。
+  void _exitMoveMode() {
+    setState(() {
+      _movingOccurrence = null;
+      _movingWeek = null;
+    });
+  }
+
+  /// 移动模式中点了目标时段（day=星期几，section=点击的节次）。
+  ///
+  /// 节数保持不变：以点击节次为起点，终点超出总节数时整体上移；
+  /// 点回原位置视为放弃，直接退出。确认后二选一：
+  /// 所有周（改课程本身）/ 仅本周（写 override）。
+  Future<void> _onMoveTargetPicked(int day, int section) async {
+    final CourseOccurrence? occurrence = _movingOccurrence;
+    final int? week = _movingWeek;
+    if (occurrence == null || week == null) {
+      return;
+    }
+    final int totalPeriods = _data.value.periods.length;
+    final int span = occurrence.sectionEnd - occurrence.sectionStart + 1;
+    final int newEnd = (section + span - 1).clamp(1, totalPeriods).toInt();
+    final int newStart = newEnd - span + 1;
+    if (day == occurrence.dayWeek && newStart == occurrence.sectionStart) {
+      _exitMoveMode();
+      return;
+    }
+    // 0 = 应用到所有周（默认，永久修改课表）；1 = 仅本周（临时调整）
+    int choice = 0;
+    final int? result = await showDialog<int>(
+      context: context,
+      builder: (BuildContext dialogContext) => StatefulBuilder(
+        builder: (BuildContext dialogContext, StateSetter setDialogState) =>
+            AlertDialog(
+              title: const Text('移动课程'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  // 用 ListTile + Icons.check 而非 RadioListTile：
+                  // Flutter 3.32+ 已废弃 RadioListTile 的 groupValue/onChanged
+                  // （要改用 RadioGroup 祖先），项目里统一用这个写法避免告警。
+                  ListTile(
+                    leading: Icon(
+                      choice == 0
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                    ),
+                    title: const Text('应用到所有周（永久修改课表）'),
+                    onTap: () => setDialogState(() => choice = 0),
+                  ),
+                  ListTile(
+                    leading: Icon(
+                      choice == 1
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                    ),
+                    title: Text('仅第 $week 周（临时调整）'),
+                    onTap: () => setDialogState(() => choice = 1),
+                  ),
+                ],
+              ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(choice),
+                  child: const Text('确定'),
+                ),
+              ],
+            ),
+      ),
+    );
+    if (result == null) {
+      // 取消对话框：保持移动模式，可重新选目标或点「取消」退出
+      return;
+    }
+    final TimetableData updated;
+    if (result == 0) {
+      updated = CourseEditor.upsertCourse(
+        _data.value,
+        occurrence.course.copyWith(
+          dayWeek: day,
+          sectionStart: newStart,
+          sectionEnd: newEnd,
+        ),
+      );
+    } else {
+      updated = CourseEditor.setOverride(
+        _data.value,
+        CourseOverride(
+          courseId: occurrence.course.id,
+          week: week,
+          dayWeek: day,
+          sectionStart: newStart,
+          sectionEnd: newEnd,
+          location: occurrence.location,
+        ),
+      );
+    }
+    _exitMoveMode();
+    final bool ok = await _applyCourseUpdate(updated);
+    if (!ok || !mounted) {
+      return;
+    }
+    final String sectionText = newStart == newEnd
+        ? '第 $newStart 节'
+        : '第 $newStart~$newEnd 节';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '已移动到 周${_dayNames[day - 1]} $sectionText'
+          '${result == 0 ? '' : '（仅第 $week 周）'}',
+        ),
+        action: SnackBarAction(label: '撤销', onPressed: _undo),
+      ),
+    );
+  }
+
+  /// 撤销最近一次编辑/删除/新增/移动。
+  Future<void> _undo() async {
+    final TimetableData? before = _undoStack.pop();
+    if (before == null) {
       return;
     }
     try {
-      await widget.storage.save(updated);
+      await widget.storage.save(before);
     } catch (error) {
+      // 保存失败：快照塞回去，不丢失这次撤销机会
+      _undoStack.push(before);
       if (mounted) {
         ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+            .showSnackBar(SnackBar(content: Text('撤销失败：$error')));
       }
       return;
     }
     if (!mounted) {
       return;
     }
-    _data.value = updated;
+    setState(() {
+      _data.value = before;
+    });
+    await WidgetService.refreshAll(before);
+    if (mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('已撤销')));
+    }
+  }
+
+  /// 编辑/删除/新增/移动统一落盘：压撤销栈 → 保存 → 更新内存 → 刷小组件。
+  /// 四个入口共用；返回是否成功（移动流程据此决定要不要弹提示）。
+  Future<bool> _applyCourseUpdate(TimetableData? updated) async {
+    if (updated == null) {
+      return false;
+    }
+    // 修改前快照压入撤销栈
+    _undoStack.push(_data.value);
+    try {
+      await widget.storage.save(updated);
+    } catch (error) {
+      // 保存失败：数据没变，把刚压的快照弹掉，撤销按钮不该亮
+      _undoStack.pop();
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      }
+      return false;
+    }
+    if (!mounted) {
+      return false;
+    }
+    // setState 而非直接赋值：AppBar 撤销按钮的显隐依赖 canUndo，
+    // 不在任何 ValueListenableBuilder 里，需要整页重建
+    setState(() {
+      _data.value = updated;
+    });
     await WidgetService.refreshAll(updated);
+    return true;
   }
 
   // ───────────────────────── 导入流程 ─────────────────────────
@@ -331,11 +635,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       context,
       storage: widget.storage,
       data: _data,
-      onDataChanged: (TimetableData updated) => _setDisplayWeek(
-        _effectiveWeek(updated),
-        updated.meta.totalWeeks,
-        animate: false,
-      ),
+      onDataChanged: (TimetableData updated) {
+        // 导入是整体替换：撤销栈清空，撤销不跨导入生效
+        _undoStack.clear();
+        setState(() {});
+        _setDisplayWeek(
+          _effectiveWeek(updated),
+          updated.meta.totalWeeks,
+          animate: false,
+        );
+      },
     );
   }
 
@@ -361,26 +670,39 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             );
           },
         ),
-        actions: <Widget>[
-          IconButton(
-            tooltip: '新增课程',
-            iconSize: windowSize.isExpanded ? 28 : 24,
-            icon: const Icon(Icons.add),
-            onPressed: _addCourse,
-          ),
-          IconButton(
-            tooltip: '导入课表',
-            iconSize: windowSize.isExpanded ? 28 : 24,
-            icon: const Icon(Icons.upload_file),
-            onPressed: _startImport,
-          ),
-          IconButton(
-            tooltip: '设置',
-            iconSize: windowSize.isExpanded ? 28 : 24,
-            icon: const Icon(Icons.settings),
-            onPressed: _openSettings,
-          ),
-        ],
+        // 移动模式中只留「取消移动」：导入/设置/+ 会改数据，
+        // 让移动中的目标信息失效；平时显示撤销（栈空时整个不渲染）
+        actions: _isMoving
+            ? <Widget>[
+                TextButton(onPressed: _exitMoveMode, child: const Text('取消移动')),
+              ]
+            : <Widget>[
+                if (_undoStack.canUndo)
+                  IconButton(
+                    tooltip: '撤销',
+                    iconSize: windowSize.isExpanded ? 28 : 24,
+                    icon: const Icon(Icons.undo),
+                    onPressed: _undo,
+                  ),
+                IconButton(
+                  tooltip: '新增课程',
+                  iconSize: windowSize.isExpanded ? 28 : 24,
+                  icon: const Icon(Icons.add),
+                  onPressed: _addCourse,
+                ),
+                IconButton(
+                  tooltip: '导入课表',
+                  iconSize: windowSize.isExpanded ? 28 : 24,
+                  icon: const Icon(Icons.upload_file),
+                  onPressed: _startImport,
+                ),
+                IconButton(
+                  tooltip: '设置',
+                  iconSize: windowSize.isExpanded ? 28 : 24,
+                  icon: const Icon(Icons.settings),
+                  onPressed: _openSettings,
+                ),
+              ],
       ),
       body: Column(
         children: <Widget>[
@@ -480,13 +802,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           builder: (BuildContext context, int week, _) =>
               _buildWeekBar(context, week, data, windowSize),
         ),
+        if (_isMoving) _buildMovingBanner(context),
         const Divider(height: 1),
         Expanded(
           child: PageView.builder(
             controller: _pageController,
             itemCount: data.meta.totalWeeks,
-            // iOS 式回弹：跟手 + 惯性 + 第 1 周 / 最后一周边缘回弹
-            physics: const BouncingScrollPhysics(parent: PageScrollPhysics()),
+            // iOS 式回弹：跟手 + 惯性 + 第 1 周 / 最后一周边缘回弹；
+            // 移动模式禁翻页（防止发起周与目标周不一致）
+            physics: _isMoving
+                ? const NeverScrollableScrollPhysics()
+                : const BouncingScrollPhysics(parent: PageScrollPhysics()),
             onPageChanged: (int index) {
               // 滑动只写值，绝不再动 controller——
               // 否则与 _setDisplayWeek 的 animateToPage 互相触发死循环
@@ -508,6 +834,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 isCurrentWeek: week == _effectiveWeek(data),
                 onCellTap: (List<CourseOccurrence> cell) =>
                     _openCell(context, cell, data.periods),
+                onCellLongPress: (List<CourseOccurrence> cell) =>
+                    _openCellMenu(context, cell, week),
+                isMoving: _isMoving,
+                movingCourseId: _movingOccurrence?.course.id,
+                onMoveTargetPicked: _onMoveTargetPicked,
                 dimens: dimens,
                 windowSize: windowSize,
               );
@@ -535,44 +866,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       );
       return;
     }
-    final CourseOccurrence?
-    picked = await showModalBottomSheet<CourseOccurrence>(
-      context: context,
-      builder: (BuildContext sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '这一格有 ${cell.length} 门课（分班 / 选项课）',
-                  style: Theme.of(sheetContext).textTheme.titleSmall,
-                ),
-              ),
-            ),
-            for (final CourseOccurrence occurrence in cell)
-              ListTile(
-                leading: Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: Color(occurrence.course.colorValue),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                title: Text(occurrence.course.name),
-                subtitle: Text(
-                  '${occurrence.location.isEmpty ? '地点未定' : occurrence.location}'
-                  ' · ${formatWeekRanges(weeksFromWeekMask(occurrence.course.weekMask))}',
-                ),
-                onTap: () => Navigator.of(sheetContext).pop(occurrence),
-              ),
-          ],
-        ),
-      ),
-    );
+    final CourseOccurrence? picked = await _pickOccurrence(context, cell);
     // 跨 await 后使用 BuildContext 必须检查 context.mounted，
     // 不能用 State.mounted（lint: use_build_context_synchronously）
     if (picked != null && context.mounted) {
@@ -584,6 +878,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         onDelete: () => _confirmDeleteCourse(picked.course),
       );
     }
+  }
+
+  /// 移动模式提示条：告知正在移动哪门课 + 取消入口。
+  Widget _buildMovingBanner(BuildContext context) {
+    final CourseOccurrence? occurrence = _movingOccurrence;
+    if (occurrence == null) {
+      return const SizedBox.shrink();
+    }
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    return Material(
+      color: colors.primaryContainer,
+      child: Row(
+        children: <Widget>[
+          const SizedBox(width: 12),
+          Icon(Icons.open_with, size: 18, color: colors.onPrimaryContainer),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '正在移动「${occurrence.course.name}」· 点目标时段',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: colors.onPrimaryContainer),
+            ),
+          ),
+          TextButton(onPressed: _exitMoveMode, child: const Text('取消')),
+          const SizedBox(width: 4),
+        ],
+      ),
+    );
   }
 
   Widget _buildWeekBar(

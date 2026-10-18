@@ -144,6 +144,85 @@ void main() {
     });
   });
 
+  group('setOverride', () {
+    test('同 (courseId, week) 已存在 → 原位替换，不重复', () {
+      final CourseOverride first = CourseOverride(
+        courseId: 'c_001',
+        week: 8,
+        dayWeek: 3,
+        sectionStart: 5,
+        sectionEnd: 6,
+        location: '实验楼B203',
+      );
+      final CourseOverride second = CourseOverride(
+        courseId: 'c_001',
+        week: 8,
+        dayWeek: 5,
+        sectionStart: 1,
+        sectionEnd: 2,
+        location: '教学楼C305',
+      );
+      final TimetableData data = dataOf(
+        courses: <Course>[courseOf('c_001')],
+        overrides: <CourseOverride>[first],
+      );
+
+      final TimetableData updated = CourseEditor.setOverride(data, second);
+
+      expect(updated.overrides.length, 1);
+      expect(updated.overrides.single.dayWeek, 5);
+      expect(updated.overrides.single.sectionStart, 1);
+      expect(updated.overrides.single.location, '教学楼C305');
+      // 原数据不被改动
+      expect(data.overrides.length, 1);
+      expect(data.overrides.single.dayWeek, 3);
+    });
+
+    test('同 courseId 不同周 / 不同 courseId 同周 → 各自独立追加', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[courseOf('c_001'), courseOf('c_002')],
+        overrides: <CourseOverride>[
+          CourseOverride(
+            courseId: 'c_001',
+            week: 8,
+            dayWeek: 3,
+            sectionStart: 5,
+            sectionEnd: 6,
+            location: '实验楼B203',
+          ),
+        ],
+      );
+
+      final TimetableData updated = CourseEditor.setOverride(
+        data,
+        CourseOverride(
+          courseId: 'c_001',
+          week: 9,
+          dayWeek: 2,
+          sectionStart: 1,
+          sectionEnd: 2,
+          location: '教学楼D402',
+        ),
+      );
+      final TimetableData updated2 = CourseEditor.setOverride(
+        updated,
+        CourseOverride(
+          courseId: 'c_002',
+          week: 8,
+          dayWeek: 4,
+          sectionStart: 7,
+          sectionEnd: 8,
+          location: '实验楼E101',
+        ),
+      );
+
+      // 同 courseId 不同周：追加
+      expect(updated.overrides.length, 2);
+      // 不同 courseId 同周：再追加
+      expect(updated2.overrides.length, 3);
+    });
+  });
+
   group('copyWith 各字段独立生效', () {
     test('Course.copyWith 只改传入字段，id 永远不变', () {
       final Course original = courseOf('c_001');
