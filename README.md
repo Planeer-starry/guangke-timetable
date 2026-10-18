@@ -123,4 +123,6 @@ android/app/src/main/
 
 ## 许可证
 
-未指定。如需使用请先联系作者。
+[MIT](LICENSE) © 2026 planeer
+
+随便用、随便改、随便参考，保留版权声明即可。
