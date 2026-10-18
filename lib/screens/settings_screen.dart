@@ -10,6 +10,7 @@ import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/widget_service.dart';
+import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/widgets/update_section.dart';
 
 /// 设置页：学期 / 外观 / 课表 / 关于 / 更新。
@@ -153,30 +154,92 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('设置')),
-      body: ListView(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        children: <Widget>[
-          _buildSemesterSection(context),
+      // expanded（平板）走双栏卡片；compact / medium 保持单列列表。
+      // 断点只在这里读一次；两个分支复用同一批 _buildXxxContent，
+      // 分组内容绝不复制两份
+      body: windowSizeOf(context).isExpanded
+          ? _buildExpandedBody(context)
+          : _buildCompactBody(context),
+    );
+  }
+
+  /// 手机 / 横屏：单列 ListView（与双栏改造前完全一致的结构）。
+  Widget _buildCompactBody(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      children: <Widget>[
+        _buildSemesterContent(context),
+        const Divider(height: 24, indent: 16, endIndent: 16),
+        _buildAppearanceContent(context),
+        const Divider(height: 24, indent: 16, endIndent: 16),
+        _buildTimetableContent(context),
+        const Divider(height: 24, indent: 16, endIndent: 16),
+        _buildAboutContent(context),
+        // updateInfoUrl 为空（未配置托管地址）时整组隐藏，
+        // 避免用户点了一个必然失败的按钮
+        if (isUpdateEnabled) ...<Widget>[
           const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildAppearanceSection(context),
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildTimetableSection(context),
-          const Divider(height: 24, indent: 16, endIndent: 16),
-          _buildAboutSection(context),
-          // updateInfoUrl 为空（未配置托管地址）时整组隐藏，
-          // 避免用户点了一个必然失败的按钮
-          if (isUpdateEnabled) ...<Widget>[
-            _sectionTitle(context, '更新'),
-            UpdateSection(initialUpdate: widget.initialUpdate),
-          ],
+          _buildUpdateContent(context),
         ],
+      ],
+    );
+  }
+
+  /// 平板：限宽 1100 双栏——左列学期+外观，右列课表+关于(+更新)。
+  /// 容器（Card）在这里决定，内容与单列完全同源（_buildXxxContent）。
+  Widget _buildExpandedBody(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 1100),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  children: <Widget>[
+                    _card(context, _buildSemesterContent(context)),
+                    const SizedBox(height: 16),
+                    _card(context, _buildAppearanceContent(context)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                child: Column(
+                  children: <Widget>[
+                    _card(context, _buildTimetableContent(context)),
+                    const SizedBox(height: 16),
+                    _card(context, _buildAboutContent(context)),
+                    if (isUpdateEnabled) ...<Widget>[
+                      const SizedBox(height: 16),
+                      _card(context, _buildUpdateContent(context)),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
+    );
+  }
+
+  /// 双栏模式下的分组卡片容器（elevation 0 + 低对比容器色）。
+  Widget _card(BuildContext context, Widget child) {
+    return Card(
+      elevation: 0,
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }
 
   // ───────────────────────── 学期 ─────────────────────────
 
-  Widget _buildSemesterSection(BuildContext context) {
+  /// 「学期」分组内容（容器由 compact/expanded 分支决定）。
+  Widget _buildSemesterContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -206,7 +269,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ───────────────────────── 外观 ─────────────────────────
 
-  Widget _buildAppearanceSection(BuildContext context) {
+  /// 「外观」分组内容。
+  Widget _buildAppearanceContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -227,7 +291,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ───────────────────────── 课表 ─────────────────────────
 
-  Widget _buildTimetableSection(BuildContext context) {
+  /// 「课表」分组内容。
+  Widget _buildTimetableContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -254,7 +319,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ───────────────────────── 关于 ─────────────────────────
 
-  Widget _buildAboutSection(BuildContext context) {
+  /// 「关于」分组内容。
+  Widget _buildAboutContent(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -280,6 +346,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
             style: Theme.of(context).textTheme.bodySmall,
           ),
         ),
+      ],
+    );
+  }
+
+  // ───────────────────────── 更新 ─────────────────────────
+
+  /// 「更新」分组内容（仅 isUpdateEnabled 时由外层插入）。
+  Widget _buildUpdateContent(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _sectionTitle(context, '更新'),
+        UpdateSection(initialUpdate: widget.initialUpdate),
       ],
     );
   }

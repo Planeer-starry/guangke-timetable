@@ -104,45 +104,52 @@ class _SemesterSetupScreenState extends State<SemesterSetupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('设置学期')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: <Widget>[
-          ListTile(
-            leading: const Icon(Icons.event),
-            title: const Text('第一周周一'),
-            subtitle: Text(_formatDate(_selectedMonday)),
-            trailing: const Icon(Icons.edit_calendar),
-            onTap: _saving ? null : _pickMonday,
+      // 表单限宽居中（平板/横屏）：ConstrainedBox 在窄屏（<560）上
+      // 不产生约束，行为与不包完全一致，因此无需断点判断
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 560),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: <Widget>[
+              ListTile(
+                leading: const Icon(Icons.event),
+                title: const Text('第一周周一'),
+                subtitle: Text(_formatDate(_selectedMonday)),
+                trailing: const Icon(Icons.edit_calendar),
+                onTap: _saving ? null : _pickMonday,
+              ),
+              const SizedBox(height: 16),
+              TextFormField(
+                initialValue: _totalWeeks.toString(),
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: '总周数',
+                  border: OutlineInputBorder(),
+                ),
+                enabled: !_saving,
+                onChanged: (String value) {
+                  final int? parsed = int.tryParse(value);
+                  if (parsed == null || parsed < 1) {
+                    return;
+                  }
+                  setState(() => _totalWeeks = parsed);
+                },
+              ),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('保存'),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          TextFormField(
-            initialValue: _totalWeeks.toString(),
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              labelText: '总周数',
-              border: OutlineInputBorder(),
-            ),
-            enabled: !_saving,
-            onChanged: (String value) {
-              final int? parsed = int.tryParse(value);
-              if (parsed == null || parsed < 1) {
-                return;
-              }
-              setState(() => _totalWeeks = parsed);
-            },
-          ),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: _saving ? null : _save,
-            child: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('保存'),
-          ),
-        ],
+        ),
       ),
     );
   }

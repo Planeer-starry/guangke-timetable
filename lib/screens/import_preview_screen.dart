@@ -70,80 +70,87 @@ class ImportPreviewScreen extends StatelessWidget {
         currentMeta!.week1Monday != jwxt!.week1Monday;
     return Scaffold(
       appBar: AppBar(title: const Text('导入预览')),
-      body: Column(
-        children: <Widget>[
-          Card(
-            margin: const EdgeInsets.all(12),
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text('识别出 ${sorted.length} 门课'),
-                  const SizedBox(height: 4),
-                  Text('覆盖周次：$weekRange'),
-                  if (skippedCount > 0)
-                    Text(
-                      '跳过 $skippedCount 条无法解析的记录',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
-                  if (hasJwxtMeta) ...<Widget>[
-                    const Divider(height: 16),
-                    Text('识别到学期：${jwxt!.semesterName ?? '未命名'}'),
-                    const SizedBox(height: 2),
-                    Text('第一周周一：${_formatDate(jwxt!.week1Monday!)}（自动填写）'),
-                    const SizedBox(height: 2),
-                    Text('总周数：${jwxt!.totalWeeks} 周'),
-                  ],
-                  if (semesterChanging) ...<Widget>[
-                    const SizedBox(height: 8),
-                    Text(
-                      '⚠️ 将修改学期设置：'
-                      '${_formatDate(currentMeta!.week1Monday)} → '
-                      '${_formatDate(jwxt!.week1Monday!)}',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ],
+      // 内容限宽居中（平板/横屏）：ConstrainedBox 在窄屏（<720）上
+      // 不产生约束，行为与不包完全一致，因此无需断点判断
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: Column(
+            children: <Widget>[
+              Card(
+                margin: const EdgeInsets.all(12),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text('识别出 ${sorted.length} 门课'),
+                      const SizedBox(height: 4),
+                      Text('覆盖周次：$weekRange'),
+                      if (skippedCount > 0)
+                        Text(
+                          '跳过 $skippedCount 条无法解析的记录',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      if (hasJwxtMeta) ...<Widget>[
+                        const Divider(height: 16),
+                        Text('识别到学期：${jwxt!.semesterName ?? '未命名'}'),
+                        const SizedBox(height: 2),
+                        Text('第一周周一：${_formatDate(jwxt!.week1Monday!)}（自动填写）'),
+                        const SizedBox(height: 2),
+                        Text('总周数：${jwxt!.totalWeeks} 周'),
+                      ],
+                      if (semesterChanging) ...<Widget>[
+                        const SizedBox(height: 8),
+                        Text(
+                          '⚠️ 将修改学期设置：'
+                          '${_formatDate(currentMeta!.week1Monday)} → '
+                          '${_formatDate(jwxt!.week1Monday!)}',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
               ),
-            ),
+              Expanded(
+                child: ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  itemCount: sorted.length,
+                  itemBuilder: (BuildContext context, int index) {
+                    final Course course = sorted[index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                      leading: Container(
+                        width: 12,
+                        height: 12,
+                        margin: const EdgeInsets.only(top: 4),
+                        decoration: BoxDecoration(
+                          color: Color(course.colorValue),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      title: Text(course.name),
+                      subtitle: Text(
+                        '${_weekdayName(course.dayWeek)} '
+                        '第${course.sectionStart}-${course.sectionEnd}节'
+                        '${course.teacher.isEmpty ? '' : ' · ${course.teacher}'}'
+                        '${course.location.isEmpty ? '' : ' · ${course.location}'}\n'
+                        '${formatWeekRanges(weeksFromWeekMask(course.weekMask))}',
+                      ),
+                      isThreeLine: true,
+                    );
+                  },
+                ),
+              ),
+            ],
           ),
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              itemCount: sorted.length,
-              itemBuilder: (BuildContext context, int index) {
-                final Course course = sorted[index];
-                return ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-                  leading: Container(
-                    width: 12,
-                    height: 12,
-                    margin: const EdgeInsets.only(top: 4),
-                    decoration: BoxDecoration(
-                      color: Color(course.colorValue),
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                  title: Text(course.name),
-                  subtitle: Text(
-                    '${_weekdayName(course.dayWeek)} '
-                    '第${course.sectionStart}-${course.sectionEnd}节'
-                    '${course.teacher.isEmpty ? '' : ' · ${course.teacher}'}'
-                    '${course.location.isEmpty ? '' : ' · ${course.location}'}\n'
-                    '${formatWeekRanges(weeksFromWeekMask(course.weekMask))}',
-                  ),
-                  isThreeLine: true,
-                );
-              },
-            ),
-          ),
-        ],
+        ),
       ),
       bottomNavigationBar: SafeArea(
         child: Padding(
