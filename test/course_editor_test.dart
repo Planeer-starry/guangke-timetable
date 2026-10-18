@@ -221,6 +221,129 @@ void main() {
       // 不同 courseId 同周：再追加
       expect(updated2.overrides.length, 3);
     });
+
+    test('cancelled: true 后同 key 再 setOverride → 原位替换为未停课', () {
+      final TimetableData data = dataOf(courses: <Course>[courseOf('c_001')]);
+
+      final TimetableData cancelled = CourseEditor.setOverride(
+        data,
+        CourseOverride(
+          courseId: 'c_001',
+          week: 8,
+          dayWeek: 1,
+          sectionStart: 3,
+          sectionEnd: 4,
+          location: '教学楼A101',
+          cancelled: true,
+        ),
+      );
+      final TimetableData restored = CourseEditor.setOverride(
+        cancelled,
+        CourseOverride(
+          courseId: 'c_001',
+          week: 8,
+          dayWeek: 3,
+          sectionStart: 5,
+          sectionEnd: 6,
+          location: '实验楼B203',
+        ),
+      );
+
+      // 同 key 替换而非追加
+      expect(restored.overrides.length, 1);
+      expect(restored.overrides.single.cancelled, false);
+      expect(restored.overrides.single.dayWeek, 3);
+      expect(restored.overrides.single.sectionStart, 5);
+    });
+  });
+
+  group('removeOverride', () {
+    test('删除匹配的 (courseId, week)，不影响其他', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[courseOf('c_001'), courseOf('c_002')],
+        overrides: <CourseOverride>[
+          CourseOverride(
+            courseId: 'c_001',
+            week: 8,
+            dayWeek: 3,
+            sectionStart: 5,
+            sectionEnd: 6,
+            location: '实验楼B203',
+          ),
+          CourseOverride(
+            courseId: 'c_001',
+            week: 9,
+            dayWeek: 2,
+            sectionStart: 1,
+            sectionEnd: 2,
+            location: '教学楼D402',
+          ),
+          CourseOverride(
+            courseId: 'c_002',
+            week: 8,
+            dayWeek: 4,
+            sectionStart: 7,
+            sectionEnd: 8,
+            location: '实验楼E101',
+          ),
+        ],
+      );
+
+      final TimetableData updated = CourseEditor.removeOverride(
+        data,
+        'c_001',
+        8,
+      );
+
+      expect(updated.overrides.length, 2);
+      // 目标 (c_001, 8) 已删
+      expect(
+        updated.overrides.any(
+          (CourseOverride o) => o.courseId == 'c_001' && o.week == 8,
+        ),
+        isFalse,
+      );
+      // 同课不同周、不同课同周 → 保留
+      expect(
+        updated.overrides.any(
+          (CourseOverride o) => o.courseId == 'c_001' && o.week == 9,
+        ),
+        isTrue,
+      );
+      expect(
+        updated.overrides.any(
+          (CourseOverride o) => o.courseId == 'c_002' && o.week == 8,
+        ),
+        isTrue,
+      );
+      // 原数据不被改动
+      expect(data.overrides.length, 3);
+    });
+
+    test('没有匹配记录 → 原样返回（不抛异常）', () {
+      final TimetableData data = dataOf(
+        courses: <Course>[courseOf('c_001')],
+        overrides: <CourseOverride>[
+          CourseOverride(
+            courseId: 'c_001',
+            week: 8,
+            dayWeek: 3,
+            sectionStart: 5,
+            sectionEnd: 6,
+            location: '实验楼B203',
+          ),
+        ],
+      );
+
+      final TimetableData updated = CourseEditor.removeOverride(
+        data,
+        'c_001',
+        1,
+      );
+
+      expect(updated.overrides.length, 1);
+      expect(updated.overrides.single.week, 8);
+    });
   });
 
   group('copyWith 各字段独立生效', () {

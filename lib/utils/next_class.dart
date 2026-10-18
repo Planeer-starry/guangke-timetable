@@ -84,6 +84,10 @@ List<NextCandidate> nextCandidates(
       data.meta.totalWeeks,
     );
     for (final CourseOccurrence occurrence in coursesForWeek(data, week)) {
+      // 本周停课（cancelled override）不算候选
+      if (occurrence.cancelled) {
+        continue;
+      }
       if (occurrence.dayWeek != day.weekday) {
         continue;
       }

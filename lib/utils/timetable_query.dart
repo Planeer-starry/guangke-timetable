@@ -11,6 +11,7 @@ class CourseOccurrence {
     required this.sectionStart,
     required this.sectionEnd,
     required this.location,
+    this.cancelled = false,
   });
 
   /// 所属课程。
@@ -27,6 +28,9 @@ class CourseOccurrence {
 
   /// 实际地点（已应用 override）。
   final String location;
+
+  /// 本周是否停课（来自 override.cancelled；无 override 为 false）。
+  final bool cancelled;
 }
 
 /// 取某一周的全部上课安排。
@@ -49,6 +53,7 @@ List<CourseOccurrence> coursesForWeek(TimetableData data, int week) {
         sectionStart: override?.sectionStart ?? course.sectionStart,
         sectionEnd: override?.sectionEnd ?? course.sectionEnd,
         location: override?.location ?? course.location,
+        cancelled: override?.cancelled ?? false,
       ),
     );
   }

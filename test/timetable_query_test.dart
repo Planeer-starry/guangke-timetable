@@ -42,8 +42,8 @@ Map<String, dynamic> courseJson({
   };
 }
 
-Map<String, dynamic> overrideJson({required int week}) {
-  return <String, dynamic>{
+Map<String, dynamic> overrideJson({required int week, bool? cancelled}) {
+  final Map<String, dynamic> json = <String, dynamic>{
     'courseId': 'c_001',
     'week': week,
     'dayWeek': 3,
@@ -51,6 +51,11 @@ Map<String, dynamic> overrideJson({required int week}) {
     'sectionEnd': 6,
     'location': '实验楼B203',
   };
+  // cancelled 为 null 时不写该字段 —— 用于覆盖「旧数据没有 cancelled 字段」的兼容性
+  if (cancelled != null) {
+    json['cancelled'] = cancelled;
+  }
+  return json;
 }
 
 void main() {
@@ -114,6 +119,29 @@ void main() {
     test('空课程列表 → 空结果', () {
       final TimetableData data = buildData(courses: <Map<String, dynamic>>[]);
       expect(coursesForWeek(data, 1), isEmpty);
+    });
+
+    test('override cancelled=true → 该周 occurrence.cancelled == true', () {
+      final TimetableData data = buildData(
+        courses: <Map<String, dynamic>>[courseJson()],
+        overrides: <Map<String, dynamic>>[
+          overrideJson(week: 8, cancelled: true),
+        ],
+      );
+
+      expect(coursesForWeek(data, 8).single.cancelled, true);
+      // 其他周不受影响
+      expect(coursesForWeek(data, 1).single.cancelled, false);
+    });
+
+    test('无 override / override 未停课 → occurrence.cancelled == false', () {
+      final TimetableData data = buildData(
+        courses: <Map<String, dynamic>>[courseJson()],
+        overrides: <Map<String, dynamic>>[overrideJson(week: 8)],
+      );
+
+      expect(coursesForWeek(data, 1).single.cancelled, false);
+      expect(coursesForWeek(data, 8).single.cancelled, false);
     });
   });
 }

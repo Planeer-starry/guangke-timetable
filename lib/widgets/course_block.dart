@@ -28,6 +28,7 @@ class CourseBlock extends StatelessWidget {
     this.onLongPress,
     this.highlighted = false,
     this.dimmed = false,
+    this.cancelled = false,
   });
 
   final CourseOccurrence occurrence;
@@ -47,6 +48,10 @@ class CourseBlock extends StatelessWidget {
 
   /// 移动模式：本块不是被移动的课（半透明弱化）。
   final bool dimmed;
+
+  /// 本周停课（来自 override）：整块 0.35 透明 + 课名删除线，
+  /// 但**不禁用交互**（用户可能想进详情取消停课）。
+  final bool cancelled;
 
   /// 断点尺寸令牌（字号）。
   final WeekGridDimens dimens;
@@ -100,6 +105,10 @@ class CourseBlock extends StatelessWidget {
                       fontSize: dimens.courseNameSize,
                       fontWeight: FontWeight.bold,
                       height: 1.2,
+                      // 停课：课名划删除线（副标题保持原样）
+                      decoration: occurrence.cancelled
+                          ? TextDecoration.lineThrough
+                          : null,
                     ),
                   ),
                   if (detailLine.isNotEmpty)
@@ -156,6 +165,10 @@ class CourseBlock extends StatelessWidget {
     }
     if (dimmed) {
       content = Opacity(opacity: 0.5, child: content);
+    }
+    // 停课：整块 0.35。与移动模式的 dimmed 叠加时近乎隐藏（临时态可接受）
+    if (cancelled) {
+      content = Opacity(opacity: 0.35, child: content);
     }
     return Padding(padding: const EdgeInsets.all(1), child: content);
   }

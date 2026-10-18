@@ -82,4 +82,23 @@ class CourseEditor {
     }
     return data.copyWith(overrides: next);
   }
+
+  /// 删除某门课某一周的 override（「取消本周调整」）。
+  ///
+  /// 按 `(courseId, week)` 匹配删除——停课（cancelled）与改时间地点
+  /// 共用同一条 override，一删全删，课程恢复原始时间地点；
+  /// 没有匹配记录时原样返回。
+  static TimetableData removeOverride(
+    TimetableData data,
+    String courseId,
+    int week,
+  ) {
+    return data.copyWith(
+      overrides: data.overrides
+          .where(
+            (CourseOverride o) => !(o.courseId == courseId && o.week == week),
+          )
+          .toList(),
+    );
+  }
 }

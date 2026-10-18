@@ -92,10 +92,11 @@ List<TodayGroup> todayGroups(TimetableData data, DateTime now, {int days = 7}) {
       data.meta.totalWeeks,
     );
     final List<CourseOccurrence> dayCourses =
-        coursesForWeek(
-            data,
-            week,
-          ).where((CourseOccurrence o) => o.dayWeek == date.weekday).toList()
+        coursesForWeek(data, week)
+            .where(
+              (CourseOccurrence o) => o.dayWeek == date.weekday && !o.cancelled,
+            )
+            .toList()
           ..sort(
             (CourseOccurrence a, CourseOccurrence b) =>
                 a.sectionStart.compareTo(b.sectionStart),

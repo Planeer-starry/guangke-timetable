@@ -123,7 +123,12 @@ List<WeekSnapshot> weekSnapshots(
 }
 
 WeekSnapshot _snapshotForWeek(TimetableData data, DateTime monday, int week) {
-  final List<CourseOccurrence> occurrences = coursesForWeek(data, week);
+  // 周视图小组件无停课态渲染（Kotlin 侧无 cancelled 概念），
+  // 停课的课直接不显示；App 内周网格仍显示半透明停课块
+  final List<CourseOccurrence> occurrences = coursesForWeek(
+    data,
+    week,
+  ).where((CourseOccurrence o) => !o.cancelled).toList();
 
   // (行, 星期) → 该格课程列表；同格多课在转 WeekCell 时聚合
   final Map<(int, int), List<CourseOccurrence>> grid =

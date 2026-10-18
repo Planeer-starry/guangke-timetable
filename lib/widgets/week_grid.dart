@@ -77,8 +77,7 @@ class WeekGrid extends StatelessWidget {
     required double rowHeight,
     required int periods,
   }) {
-    final int day =
-        ((local.dx - timeColumnWidth) / dayColumnWidth).floor() + 1;
+    final int day = ((local.dx - timeColumnWidth) / dayColumnWidth).floor() + 1;
     final int section = (local.dy / rowHeight).floor() + 1;
     return (day.clamp(1, 7).toInt(), section.clamp(1, periods).toInt());
   }
@@ -117,9 +116,7 @@ class WeekGrid extends StatelessWidget {
                   (constraints.maxWidth - dimens.timeColumnWidth) / 7;
               return SingleChildScrollView(
                 // 移动模式禁纵向滚动，否则和点选落点手势打架
-                physics: isMoving
-                    ? const NeverScrollableScrollPhysics()
-                    : null,
+                physics: isMoving ? const NeverScrollableScrollPhysics() : null,
                 child: GestureDetector(
                   // opaque：空白格（无子组件的区域）也响应点击
                   behavior: HitTestBehavior.opaque,
@@ -329,8 +326,7 @@ class WeekGrid extends StatelessWidget {
   Widget _buildCourseBlock(List<CourseOccurrence> cell, double rowHeight) {
     final CourseOccurrence first = cell.first;
     final int sections = first.sectionEnd - first.sectionStart + 1;
-    final bool isMovingThis =
-        isMoving && first.course.id == movingCourseId;
+    final bool isMovingThis = isMoving && first.course.id == movingCourseId;
     return Positioned(
       top: (first.sectionStart - 1) * rowHeight,
       left: 1,
@@ -348,6 +344,7 @@ class WeekGrid extends StatelessWidget {
             : () => onCellLongPress!(cell),
         highlighted: isMovingThis,
         dimmed: isMoving && !isMovingThis,
+        cancelled: first.cancelled,
         dimens: dimens,
         windowSize: windowSize,
         // 理论高度（不减 2px 边距修正），保证两节连堂恰好命中

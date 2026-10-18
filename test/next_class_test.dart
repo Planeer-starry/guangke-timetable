@@ -54,6 +54,28 @@ void main() {
       expect(nextCandidates(TimetableData.empty(), now), isEmpty);
     });
 
+    test('本周停课（cancelled override）的课不出现在候选里', () {
+      final TimetableData data = buildData(
+        courses: <Map<String, dynamic>>[
+          course(dayWeek: 3, sectionStart: 4, sectionEnd: 4),
+        ],
+        overrides: <Map<String, dynamic>>[
+          <String, dynamic>{
+            'courseId': 'c_001',
+            'week': 1,
+            'dayWeek': 3,
+            'sectionStart': 4,
+            'sectionEnd': 4,
+            'location': '教学楼A302',
+            'cancelled': true,
+          },
+        ],
+      );
+
+      // now 是第 1 周周三，该课本该在候选里；停课后 → 空
+      expect(nextCandidates(data, now), isEmpty);
+    });
+
     test('进行中的节出现在候选里，whenText 用绝对时间', () {
       final TimetableData data = buildData(
         courses: <Map<String, dynamic>>[

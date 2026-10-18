@@ -60,6 +60,35 @@ void main() {
     expect(groups, isEmpty);
   });
 
+  test('本周停课（cancelled override）的课不出现在当天分组里', () {
+    final TimetableData data = _data(
+      courses: <Course>[
+        _course(
+          id: 'c_001',
+          name: '高等数学',
+          dayWeek: 6,
+          sectionStart: 1,
+          sectionEnd: 2,
+        ),
+      ],
+      overrides: <CourseOverride>[
+        CourseOverride(
+          courseId: 'c_001',
+          week: 6,
+          dayWeek: 6,
+          sectionStart: 1,
+          sectionEnd: 2,
+          location: '教学楼A101',
+          cancelled: true,
+        ),
+      ],
+    );
+
+    // saturday（10-17）是第 6 周周六 → 当天分组应为空
+    final List<TodayGroup> groups = todayGroups(data, saturday);
+    expect(groups.first.items, isEmpty);
+  });
+
   test('周六有课：分组数、header 文案、课程内容全部正确', () {
     final TimetableData data = _data(
       courses: <Course>[

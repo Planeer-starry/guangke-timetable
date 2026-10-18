@@ -1,4 +1,5 @@
-/// 当周调整：某一门课在某一周被临时改到其它时间或地点。
+/// 当周调整：某一门课在某一周被临时改到其它时间或地点，
+/// 或被标记为停课（[cancelled]）。
 ///
 /// 对应 JSON 契约 `overrides[]`（见 AGENTS.md 5.2）。
 class CourseOverride {
@@ -9,6 +10,7 @@ class CourseOverride {
     required this.sectionStart,
     required this.sectionEnd,
     required this.location,
+    this.cancelled = false,
   });
 
   /// 关联的课程 id。
@@ -29,6 +31,9 @@ class CourseOverride {
   /// 调整后的上课地点。
   final String location;
 
+  /// 该周是否停课（true = 本周停课，不参与实际上课）。
+  final bool cancelled;
+
   factory CourseOverride.fromJson(Map<String, dynamic> json) {
     return CourseOverride(
       courseId: (json['courseId'] as String?) ?? '',
@@ -37,6 +42,8 @@ class CourseOverride {
       sectionStart: (json['sectionStart'] as int?) ?? 1,
       sectionEnd: (json['sectionEnd'] as int?) ?? 1,
       location: (json['location'] as String?) ?? '',
+      // 旧数据没有该字段 → 视为未停课（向后兼容）
+      cancelled: (json['cancelled'] as bool?) ?? false,
     );
   }
 
@@ -48,6 +55,7 @@ class CourseOverride {
       'sectionStart': sectionStart,
       'sectionEnd': sectionEnd,
       'location': location,
+      'cancelled': cancelled,
     };
   }
 }

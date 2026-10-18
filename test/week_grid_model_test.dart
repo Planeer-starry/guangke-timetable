@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:timetable/models/course.dart';
+import 'package:timetable/models/course_override.dart';
 import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/timetable_meta.dart';
@@ -11,7 +12,10 @@ import 'package:timetable/utils/week_grid_model.dart';
 /// 2026-10-17 是周六（2026-09-07 学期的第 6 周），所在周周一 = 10-12。
 final DateTime saturday = DateTime(2026, 10, 17);
 
-TimetableData _data({List<Course> courses = const <Course>[]}) {
+TimetableData _data({
+  List<Course> courses = const <Course>[],
+  List<CourseOverride> overrides = const <CourseOverride>[],
+}) {
   return TimetableData(
     meta: TimetableMeta(
       school: '广东科技学院',
@@ -21,7 +25,7 @@ TimetableData _data({List<Course> courses = const <Course>[]}) {
     ),
     periods: Period.defaults,
     courses: courses,
-    overrides: const [],
+    overrides: overrides,
   );
 }
 
@@ -117,6 +121,27 @@ void main() {
     // 按 Unicode 码点排序：日(U+65E5) < 英(U+82F1)，所以「大学日语Ⅰ」排在前
     expect(cell!.text, '大学日语Ⅰ');
     expect(cell.extra, 1);
+  });
+
+  test('本周停课（cancelled override）的课不进快照', () {
+    final TimetableData data = _data(
+      courses: <Course>[_course('c_001', '高等数学', 6, 1, 2)],
+      overrides: <CourseOverride>[
+        CourseOverride(
+          courseId: 'c_001',
+          week: 6,
+          dayWeek: 6,
+          sectionStart: 1,
+          sectionEnd: 2,
+          location: '教学楼A101',
+          cancelled: true,
+        ),
+      ],
+    );
+
+    final List<WeekSnapshot> snapshots = weekSnapshots(data, saturday);
+    // 第 6 周周六 1-2 节：停课后该格为 null（小组件无停课态渲染）
+    expect(snapshots.first.rows[0].cells[5], isNull);
   });
 
   test('3 个快照 weekStart 依次 +7 天，周次递增', () {

@@ -317,6 +317,84 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     await _applyCourseUpdate(CourseEditor.deleteCourse(_data.value, course.id));
   }
 
+  // ───────────────────────── 本周停课 / 取消本周调整 ─────────────────────────
+
+  /// 打开课程详情 sheet（单课 / 多课选择后共用），
+  /// 带「本周停课 / 取消本周调整」入口（J3）。
+  void _showDetail(
+    BuildContext context,
+    CourseOccurrence occurrence,
+    List<Period> periods,
+  ) {
+    showCourseDetailSheet(
+      context,
+      occurrence: occurrence,
+      periods: periods,
+      onEdit: () => _editCourse(occurrence.course),
+      onDelete: () => _confirmDeleteCourse(occurrence.course),
+      currentWeek: _displayWeek.value,
+      hasOverrideThisWeek: _hasOverrideThisWeek(occurrence),
+      onCancelThisWeek: () => _cancelThisWeek(occurrence),
+      onClearWeekAdjust: () => _clearWeekAdjust(occurrence),
+    );
+  }
+
+  /// 本周该课是否已有 override（改时间地点或停课都算）。
+  bool _hasOverrideThisWeek(CourseOccurrence occurrence) {
+    return _data.value.overrides.any(
+      (CourseOverride o) =>
+          o.courseId == occurrence.course.id && o.week == _displayWeek.value,
+    );
+  }
+
+  /// 本周停课：写 cancelled override（保留原时段地点，仅标记停课）。
+  /// 落盘走 _applyCourseUpdate：压撤销栈 → 保存 → 更新内存 → 刷小组件。
+  Future<void> _cancelThisWeek(CourseOccurrence occurrence) async {
+    final bool ok = await _applyCourseUpdate(
+      CourseEditor.setOverride(
+        _data.value,
+        CourseOverride(
+          courseId: occurrence.course.id,
+          week: _displayWeek.value,
+          dayWeek: occurrence.dayWeek,
+          sectionStart: occurrence.sectionStart,
+          sectionEnd: occurrence.sectionEnd,
+          location: occurrence.location,
+          cancelled: true,
+        ),
+      ),
+    );
+    if (ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('本周已停课'),
+          action: SnackBarAction(label: '撤销', onPressed: _undo),
+        ),
+      );
+    }
+  }
+
+  /// 取消本周调整：删除该课本周的 override。停课与改时间地点共用
+  /// 一条 override，一删全删、恢复课表原始状态——
+  /// 也是已停课课程恢复上课的入口。
+  Future<void> _clearWeekAdjust(CourseOccurrence occurrence) async {
+    final bool ok = await _applyCourseUpdate(
+      CourseEditor.removeOverride(
+        _data.value,
+        occurrence.course.id,
+        _displayWeek.value,
+      ),
+    );
+    if (ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('已取消本周调整'),
+          action: SnackBarAction(label: '撤销', onPressed: _undo),
+        ),
+      );
+    }
+  }
+
   // ───────────────────────── 长按菜单 / 移动模式 ─────────────────────────
 
   /// 长按课程格 → 操作菜单（编辑 / 移动到… / 删除）。
@@ -472,6 +550,11 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _exitMoveMode();
       return;
     }
+    // 目标位置文案：对话框标题与成功提示共用（单节不显示「N~N」）
+    final String sectionText = newStart == newEnd
+        ? '第 $newStart 节'
+        : '第 $newStart~$newEnd 节';
+    final String targetText = '周${_dayNames[day - 1]} $sectionText';
     // 0 = 应用到所有周（默认，永久修改课表）；1 = 仅本周（临时调整）
     int choice = 0;
     final int? result = await showDialog<int>(
@@ -479,7 +562,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       builder: (BuildContext dialogContext) => StatefulBuilder(
         builder: (BuildContext dialogContext, StateSetter setDialogState) =>
             AlertDialog(
-              title: const Text('移动课程'),
+              // 点确定前能看清目标位置
+              title: Text('移动到「$targetText」'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
@@ -551,13 +635,10 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     if (!ok || !mounted) {
       return;
     }
-    final String sectionText = newStart == newEnd
-        ? '第 $newStart 节'
-        : '第 $newStart~$newEnd 节';
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '已移动到 周${_dayNames[day - 1]} $sectionText'
+          '已移动到 $targetText'
           '${result == 0 ? '' : '（仅第 $week 周）'}',
         ),
         action: SnackBarAction(label: '撤销', onPressed: _undo),
@@ -856,27 +937,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     List<Period> periods,
   ) async {
     if (cell.length == 1) {
-      final CourseOccurrence occurrence = cell.single;
-      showCourseDetailSheet(
-        context,
-        occurrence: occurrence,
-        periods: periods,
-        onEdit: () => _editCourse(occurrence.course),
-        onDelete: () => _confirmDeleteCourse(occurrence.course),
-      );
+      _showDetail(context, cell.single, periods);
       return;
     }
     final CourseOccurrence? picked = await _pickOccurrence(context, cell);
     // 跨 await 后使用 BuildContext 必须检查 context.mounted，
     // 不能用 State.mounted（lint: use_build_context_synchronously）
     if (picked != null && context.mounted) {
-      showCourseDetailSheet(
-        context,
-        occurrence: picked,
-        periods: periods,
-        onEdit: () => _editCourse(picked.course),
-        onDelete: () => _confirmDeleteCourse(picked.course),
-      );
+      _showDetail(context, picked, periods);
     }
   }
 
