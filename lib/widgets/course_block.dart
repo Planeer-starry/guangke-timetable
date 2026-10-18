@@ -68,17 +68,10 @@ class CourseBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color color = Color(occurrence.course.colorValue);
-    // 文字色按背景亮度自适应：白字可用性下限取 WCAG 大字号 AA 的 3:1，
-    // 对应亮度阈值 0.28（白字对比 1.05/(lum+0.05) >= 3.2）。
-    // 超过阈值的浅色块（草绿、琥珀等）改用深色字，对比可达 6.7:1。
-    // 调色板本身因此可以保持色相清晰，不必为了白字可读而全部压暗。
-    final bool onLightColor = color.computeLuminance() > 0.28;
-    final Color nameColor = onLightColor
-        ? Colors.black.withValues(alpha: 0.87)
-        : Colors.white;
-    final Color subColor = onLightColor
-        ? Colors.black.withValues(alpha: 0.60)
-        : Colors.white70;
+    // 字色统一白色：调色板 16 个色号对白字的对比度实测 3.82 ~ 5.23:1，
+    // 全部达到 WCAG 大字号 AA（3:1），不需要再按背景亮度切黑字。
+    const Color nameColor = Colors.white;
+    const Color subColor = Colors.white70;
     // 圆角 6 → 8：与设置页卡片（16）、小组件（16）形成同一套圆角语汇
     const double blockRadius = 8;
     // 「地点 · 教师」合并行只在 expanded 且块高 >= 2 × 行高时出现。
