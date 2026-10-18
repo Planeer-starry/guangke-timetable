@@ -1,0 +1,85 @@
+name: 导入失败 / 课表格式不支持
+description: 你的学校教务系统导出的课表无法正确导入
+title: "[导入] "
+labels: ["import"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        这个模板用于**让别的学校的同学贡献课表样表**。
+
+        目前解析器主要针对**正方系统**的导出格式调优，其他学校可能解析不全。
+        提交真实样表后，我才能针对你的学校适配。
+
+        > ⚠️ **提交前请先删掉表格里的姓名、学号、班级等个人信息。**
+        > 教务导出的表格通常最上面几行是个人信息区，直接整行删除即可。
+
+  - type: input
+    id: school
+    attributes:
+      label: 学校名称
+      description: 全称
+      placeholder: 广东科技学院
+    validations:
+      required: true
+
+  - type: dropdown
+    id: system
+    attributes:
+      label: 教务系统
+      description: 登录教务系统的网址里通常能看到线索（如 zfsoft = 正方，qg = 青果）
+      options:
+        - 不确定
+        - 正方（zfsoft / jwglxt）
+        - 青果（qg）
+        - URP
+        - 金智（kingosoft / 强智）
+        - 其他
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: symptoms
+    attributes:
+      label: 导入后的现象
+      description: 可多选
+      options:
+        - label: 完全识别不到课程（提示「未识别到任何课程」）
+        - label: 课程数量不对（比实际少）
+        - label: 课程名错乱（把教师/地点当成了课程名）
+        - label: 星期列错位（课表整体偏移）
+        - label: 节次不对（时间对不上）
+        - label: 周次不对（该上的周没显示 / 不该上的周显示了）
+        - label: 地点或教师为空
+        - label: 其他（在下面说明）
+
+  - type: textarea
+    id: details
+    attributes:
+      label: 补充说明
+      description: 你期望的结果，以及实际看到的结果
+      placeholder: |
+        例如：导入后只有 8 门课，实际有 15 门。
+        课表里「高等数学」显示成了「张三」。
+
+  - type: textarea
+    id: file
+    attributes:
+      label: 课表文件
+      description: |
+        把教务系统导出的 `.xls` / `.xlsx` 文件**直接拖到这个框里**上传。
+
+        ⚠️ 找不到导出功能也请说明 —— 有些学校只能截图，那就贴截图。
+      placeholder: 拖拽文件到这里，或点击选择文件
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 我已删除表格中含姓名、学号、班级等个人信息的行 / 列
+          required: true
+        - label: 我同意这个文件被用于改进导入器的格式适配
+          required: true

@@ -112,6 +112,22 @@ android/app/src/main/
 
 ---
 
+## 适配你的学校
+
+目前 Excel 解析主要针对**正方系统**的紧凑格式调优。其他学校的导出格式可能识别不到课程、
+课程数量偏少，或者课名 / 地点 / 教师错位。
+
+**如果你的学校导入不成功，欢迎提交课表样表** —— 拿到真实文件才能针对你的学校适配：
+
+👉 [导入失败 / 课表格式不支持 · 提交 Issue](https://github.com/Planeer-starry/guangke-timetable/issues/new?template=import-failure.yml)
+
+提交时请附上教务系统导出的 `.xls` / `.xlsx`，并**先删掉表格顶部的姓名、学号、班级等信息**。
+
+> 解析不完整时也可以先用 App 内的「+」手动添加课程，或用编辑功能修正 ——
+> 导入只负责把大部分的活干掉。
+
+---
+
 ## 已知限制
 
 - 只做了 Android；iOS / Web / Windows 未做
@@ -123,6 +139,6 @@ android/app/src/main/
 
 ## 许可证
 
-[MIT](LICENSE) © 2026 planeer
+[MIT](LICENSE) © 2026 Planeer-starry
 
 随便用、随便改、随便参考，保留版权声明即可。

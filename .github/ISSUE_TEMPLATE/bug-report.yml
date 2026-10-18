@@ -1,0 +1,65 @@
+name: Bug 反馈
+description: App 功能异常（不是导入格式问题）
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > 如果是**课表导入不进来 / 导入后内容不对**，请用「导入失败 / 课表格式不支持」模板，
+        > 那个模板会引导你附上课表文件。
+        >
+        > 如果是**桌面小组件**的问题，请在下面说明是哪一个（下节课 / 今日课程 / 一周总课表）。
+
+  - type: input
+    id: version
+    attributes:
+      label: App 版本
+      description: 设置页 → 关于 → 广科课表 下面那行
+      placeholder: 1.1.0 (build 2)
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 设备与系统
+      placeholder: OnePlus OPD2506 / Android 16
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 出问题的模块
+      options:
+        - 周课表视图
+        - 导入
+        - 桌面小组件
+        - 课表编辑（新增 / 编辑 / 移动 / 删除）
+        - 停课 / 撤销
+        - 设置页
+        - 深色模式 / 主题
+        - 其他
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: 现象描述
+      description: 你做了什么、期望什么、实际发生什么
+      placeholder: |
+        1. 打开 App，滑到第 8 周
+        2. 长按「高等数学」，选「移动到…」
+        3. 点周三 3-4 节
+        期望：课表移动过去
+        实际：App 闪退了
+    validations:
+      required: true
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: 截图 / 录屏
+      description: 直接拖进来
