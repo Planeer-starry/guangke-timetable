@@ -158,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           data: _data,
           storage: widget.storage,
           settings: widget.settings,
+          undoStack: _undoStack,
           initialUpdate: _updateInfo.value,
         ),
       ),

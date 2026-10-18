@@ -9,6 +9,7 @@ import 'package:timetable/screens/import_flow.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/widgets/update_section.dart';
@@ -20,12 +21,19 @@ class SettingsScreen extends StatefulWidget {
     required this.data,
     required this.storage,
     required this.settings,
+    required this.undoStack,
     required this.initialUpdate,
   });
 
   final ValueNotifier<TimetableData> data;
   final StorageService storage;
   final SettingsService settings;
+
+  /// 首页持有的撤销栈。
+  ///
+  /// 「恢复导入的原始课表」「清空课表」是整体替换语义，必须清空撤销栈——
+  /// 否则用户回到首页点撤销会退回替换前的编辑状态，与其预期不符。
+  final UndoStack undoStack;
 
   /// 首页静默检查已拿到的新版本；null 表示没查到或还没查。
   final UpdateInfo? initialUpdate;
@@ -174,6 +182,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     widget.data.value = snapshot;
+    // 恢复 = 整体重置，撤销栈里的旧快照已无意义，必须清空，
+    // 否则用户回首页点撤销会退回「恢复到这份快照之前」的编辑状态。
+    widget.undoStack.clear();
     WidgetService.refreshAll(snapshot);
     ScaffoldMessenger.of(context)
         .showSnackBar(const SnackBar(content: Text('已恢复到最近一次导入的状态')));
@@ -213,6 +224,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     widget.data.value = cleared;
+    // 清空 = 整体重置，撤销栈必须清空（与恢复原始课表同理）。
+    widget.undoStack.clear();
     WidgetService.refreshAll(cleared);
     if (mounted) {
       ScaffoldMessenger.of(context)
@@ -258,11 +271,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 平板：限宽 1100 双栏——左列学期+外观，右列课表+关于(+更新)。
   /// 容器（Card）在这里决定，内容与单列完全同源（_buildXxxContent）。
   Widget _buildExpandedBody(BuildContext context) {
-    return Center(
+    // 用 Align(topCenter) 而不是 Center：Center 也会把内容【垂直】居中，
+    // 在 1200dp 高的平板上会让卡片整体下移、顶部空出一大块。
+    return Align(
+      alignment: Alignment.topCenter,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 1100),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -296,12 +312,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  /// 双栏模式下的分组卡片容器（elevation 0 + 低对比容器色）。
+  /// 双栏模式下的分组卡片容器。
+  ///
+  /// 用 surfaceContainerHigh + 1dp 描边：
+  /// surfaceContainerLow 在深色模式下与背景几乎同色，只能靠圆角轮廓分辨，
+  /// 加一档容器色和一圈 subtle 描边后深浅色都有清晰的卡片边界。
   Widget _card(BuildContext context, Widget child) {
+    final ColorScheme colors = Theme.of(context).colorScheme;
     return Card(
       elevation: 0,
-      color: Theme.of(context).colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      color: colors.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: colors.outlineVariant.withValues(alpha: 0.6),
+          width: 1,
+        ),
+      ),
       child: Padding(padding: const EdgeInsets.all(16), child: child),
     );
   }

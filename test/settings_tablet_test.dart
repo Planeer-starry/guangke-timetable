@@ -8,6 +8,7 @@ import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/screens/settings_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/undo_stack.dart';
 
 /// 「学期已配置」的最小课表（meta 三件套齐）。
 TimetableData _configuredData() {
@@ -56,6 +57,7 @@ Future<void> pumpSettings(WidgetTester tester) async {
         data: ValueNotifier<TimetableData>(_configuredData()),
         storage: storage,
         settings: settings,
+        undoStack: UndoStack(),
         initialUpdate: null,
       ),
     ),

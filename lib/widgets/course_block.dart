@@ -68,6 +68,19 @@ class CourseBlock extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color color = Color(occurrence.course.colorValue);
+    // 亮色课块（调色板里的橙 #FFA726 lum=0.49、浅绿 #9CCC65 lum=0.45）
+    // 上白字对比度只有 ~2:1，远低于 WCAG 的 4.5:1，改用深色字（对比 ~10:1）。
+    // 阈值 0.42 经调色板实算标定：只有橙、浅绿会触发，其余（蓝/紫/绿/红/青）
+    // 白字对比 2.6~6.9，保持白字。
+    final bool onLightColor = color.computeLuminance() > 0.42;
+    final Color nameColor = onLightColor
+        ? Colors.black.withValues(alpha: 0.87)
+        : Colors.white;
+    final Color subColor = onLightColor
+        ? Colors.black.withValues(alpha: 0.60)
+        : Colors.white70;
+    // 圆角 6 → 8：与设置页卡片（16）、小组件（16）形成同一套圆角语汇
+    const double blockRadius = 8;
     // 「地点 · 教师」合并行只在 expanded 且块高 >= 2 × 行高时出现。
     // 用理论高度（节数 × rowHeight）判断，不受定位时的 1px 边距修正影响，
     // 两节连堂恰好命中；1 节矮块不显示，窄块（compact/medium）不显示。
@@ -84,9 +97,9 @@ class CourseBlock extends StatelessWidget {
         : location;
     Widget content = Material(
       color: color,
-      borderRadius: BorderRadius.circular(6),
+      borderRadius: BorderRadius.circular(blockRadius),
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(blockRadius),
         onTap: onTap,
         onLongPress: onLongPress,
         child: Stack(
@@ -101,7 +114,7 @@ class CourseBlock extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: Colors.white,
+                      color: nameColor,
                       fontSize: dimens.courseNameSize,
                       fontWeight: FontWeight.bold,
                       height: 1.2,
@@ -117,7 +130,7 @@ class CourseBlock extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: Colors.white70,
+                        color: subColor,
                         fontSize: dimens.courseSubSize,
                       ),
                     ),

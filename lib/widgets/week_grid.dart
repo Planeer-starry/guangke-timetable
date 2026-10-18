@@ -218,6 +218,19 @@ class WeekGrid extends StatelessWidget {
     );
   }
 
+  /// 斑马纹：奇数行（第 2 / 4 / 6 … 节）叠一层极淡的背景。
+  ///
+  /// 大屏上空网格占比很高，纯背景色上很难用眼睛横着跟住一行；
+  /// 2.5% 的 onSurface 叠加几乎看不出色差，但能明显改善行列追踪。
+  Color? _rowTint(BuildContext context, int rowIndex) {
+    if (rowIndex.isEven) {
+      return null;
+    }
+    return Theme.of(
+      context,
+    ).colorScheme.onSurface.withValues(alpha: 0.025);
+  }
+
   /// 节次列：数据来自 meta.periods，禁止硬编码。
   Widget _buildTimeColumn(BuildContext context, double rowHeight) {
     final ColorScheme colors = Theme.of(context).colorScheme;
@@ -232,8 +245,9 @@ class WeekGrid extends StatelessWidget {
         child: Column(
           children: <Widget>[
             for (final Period period in periods)
-              SizedBox(
+              Container(
                 height: rowHeight,
+                color: _rowTint(context, period.index - 1),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Column(
@@ -300,17 +314,17 @@ class WeekGrid extends StatelessWidget {
       child: Stack(
         children: <Widget>[
           // 底层网格：每节一个 cell 画右/下边线，7 列叠加形成完整行列，
-          // 颜色取 outlineVariant（亮≈浅灰、暗≈比背景亮一档），深浅色都有结构感
+          // 颜色取 outlineVariant（亮≈浅灰、暗≈比背景亮一档），深浅色都有结构感；
+          // 奇数行再叠一层极淡的斑马纹（与节次列对齐）。
           Positioned.fill(
             child: Column(
               children: <Widget>[
                 for (int i = 0; i < periods.length; i++)
-                  SizedBox(
+                  Container(
                     height: rowHeight,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        border: Border(right: gridSide, bottom: gridSide),
-                      ),
+                    decoration: BoxDecoration(
+                      color: _rowTint(context, i),
+                      border: Border(right: gridSide, bottom: gridSide),
                     ),
                   ),
               ],
