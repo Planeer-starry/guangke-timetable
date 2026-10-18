@@ -2,16 +2,23 @@
 ///
 /// 输入是把 Excel 工作表读出来的 `List<List<String?>>`（转换在 UI 层完成，
 /// 这里保持纯净可单测）。表格结构（真实数据已验证）：
-/// - 标题区（第一行附近）：C 列含学期名；
-/// - 表头行：含「星期一」…「星期日」，星期列 = C3..C9（0 基索引 2..8）；
-/// - 数据行：格内可能拼接多条「课程名/(节次)周次/校区 地点/教师/…」；
+/// - 标题区（第一行附近）：含学期名；
+/// - 表头行：星期表头（两级识别，见 [_matchDayHeader]）；
+/// - 数据行：左侧节次列 + 星期课程格。课程格三层解析：第 1 层正方
+///   `/` 紧凑格式（[parseCellText]），未命中才走第 2/3 层通用解析
+///   （[parseGenericCell]，见 generic_cell_parser.dart）；
 /// - 尾部：实践课程行（跳过）与注释行（含 week1Monday / totalWeeks 元信息）。
 library;
 
 import 'package:timetable/models/course.dart';
 import 'package:timetable/models/period.dart';
 import 'package:timetable/utils/course_color.dart';
+import 'package:timetable/utils/generic_cell_parser.dart';
 import 'package:timetable/utils/week_mask.dart';
+
+// parseWeeksText 已原样迁移到 generic_cell_parser（单一实现），
+// 这里 re-export 保持既有 import 路径兼容（A 组测试无需改动）。
+export 'package:timetable/utils/generic_cell_parser.dart' show parseWeeksText;
 
 /// 单元格内一条课程记录（解析中间产物，供单测）。
 class JwxtCellEntry {
@@ -51,6 +58,10 @@ class JwxtImportResult {
     this.week1Monday,
     this.totalWeeks,
     this.semesterName,
+    this.periods,
+    this.usedDefaultPeriods = true,
+    this.detectedSectionCount = 0,
+    this.fallbackCount = 0,
     this.error,
   });
 
@@ -66,6 +77,21 @@ class JwxtImportResult {
   /// 标题区的学期名，如「2026-2027年第1学期」；失败为 null。
   final String? semesterName;
 
+  /// 节次列构造出的作息（E2 三态，**绝不缩水**）：
+  /// - 读到 ≥ 1 个有效时间 → 构造的 periods；
+  /// - 只有编号没时间 / 连编号都没有 → null。
+  /// null 时调用方保留现有 periods，不补 `--:--` 假时间。
+  final List<Period>? periods;
+
+  /// true = periods 为 null，调用方沿用现有/默认作息。
+  final bool usedDefaultPeriods;
+
+  /// 行标签推断出的节次数（如广科汉字节次表「一..五」= 5）。
+  final int detectedSectionCount;
+
+  /// 走第 3 层兜底的条目数（预览页「导入后可手动补全」警示用）。
+  final int fallbackCount;
+
   /// 匹配到但无法生成有效课程的条数（周次空集 / 节次越界）。
   final int skippedCount;
 
@@ -77,56 +103,6 @@ class JwxtImportResult {
 
   /// 学期三件套是否齐全（可自动填写 meta）。
   bool get hasMeta => week1Monday != null && totalWeeks != null;
-}
-
-/// 解析周次文本 → 周次集合（已验证的算法，改前先跑单测）：
-/// 1) 含「单」→ 只留奇数周；含「双」→ 只留偶数周；
-/// 2) 去掉 单/双/周 及全半角括号；
-/// 3) 按 `,，、;；` 与空白切段，每段是「a-b」区间（含 – ~ — 到 至）或单周；
-/// 4) 空串 / 乱码 → 空集合，绝不抛异常。
-Set<int> parseWeeksText(String text) {
-  if (text.trim().isEmpty) {
-    return <int>{};
-  }
-  final bool odd = text.contains('单');
-  final bool even = text.contains('双');
-  final String cleaned = text
-      .replaceAll(RegExp(r'[（(]?\s*[单双]\s*周?\s*[）)]?'), '')
-      .replaceAll('周', '');
-  final Set<int> weeks = <int>{};
-  for (final String segment in cleaned.split(RegExp(r'[,，、;；\s]+'))) {
-    if (segment.isEmpty) {
-      continue;
-    }
-    final RegExpMatch? range = RegExp(r'^(\d+)[-–~—到至](\d+)$')
-        .firstMatch(segment);
-    if (range != null) {
-      int a = int.parse(range.group(1)!);
-      int b = int.parse(range.group(2)!);
-      if (a > b) {
-        final int t = a;
-        a = b;
-        b = t;
-      }
-      for (int w = a; w <= b; w++) {
-        if (w >= minWeek && w <= maxWeek) {
-          weeks.add(w);
-        }
-      }
-    } else {
-      final int? single = int.tryParse(segment);
-      if (single != null && single >= minWeek && single <= maxWeek) {
-        weeks.add(single);
-      }
-    }
-  }
-  if (odd) {
-    return weeks.where((int w) => w % 2 == 1).toSet();
-  }
-  if (even) {
-    return weeks.where((int w) => w % 2 == 0).toSet();
-  }
-  return weeks;
 }
 
 /// 单元格提取正则（真实数据已验证）：
@@ -165,18 +141,237 @@ final RegExp _metaPattern = RegExp(
   r'(\d{4}-\d{2}-\d{2})\s*正式上课.*?共\s*(\d+)\s*周',
 );
 
+/// 节次绝对上界：只用于防脏数据（如「99 节」）。
+///
+/// **不与 detectedSectionCount / Period.defaults.length 挂钩**（E1 教训：
+/// 广科样表节次列是汉字「一..五」，行推断只能数出 5，若拿它当上界校验
+/// 格内自带的 (9-10节)，会误杀约 10 门晚课）。行推断节数只是「标签数」，
+/// 不代表表格真实节次容量——格内自带节次一律以绝对界校验。
+const int _absMaxSection = 24;
+
+// ───────────────────── 表头两级识别 ─────────────────────
+
+/// 汉字/数字 → 星期号（1..7）；「日」「天」都是 7。
+const Map<String, int> _dayChars = <String, int>{
+  '一': 1,
+  '二': 2,
+  '三': 3,
+  '四': 4,
+  '五': 5,
+  '六': 6,
+  '日': 7,
+  '天': 7,
+  '1': 1,
+  '2': 2,
+  '3': 3,
+  '4': 4,
+  '5': 5,
+  '6': 6,
+  '7': 7,
+};
+
+/// 第一级完整形式：`(星期|周|礼拜)(一..日/天|1..7)`，格级完全匹配。
+final RegExp _dayHeaderFullPattern = RegExp(r'^(?:星期|周|礼拜)([一二三四五六日天1-7])$');
+
+/// 第二级裸字：单个 一/二/…/六/日/天（**不认裸数字**，避免把
+/// 数据行里的编号格当表头）。
+final RegExp _dayHeaderBarePattern = RegExp(r'^([一二三四五六日天])$');
+
+/// 表头格 → 星期号（1..7）；不匹配返回 null。
+///
+/// - [bare] = false：第一级完整形式（`星期一`/`周二`/`礼拜三`/`星期3`）；
+/// - [bare] = true：第二级裸字（`一`）。仅当第一级在全表命中 < 3 个格时
+///   才由调用方启用。
+int? _matchDayHeader(String? cell, {required bool bare}) {
+  if (cell == null) {
+    return null;
+  }
+  final String trimmed = cell.trim();
+  if (trimmed.isEmpty) {
+    return null;
+  }
+  final RegExpMatch? match =
+      (bare ? _dayHeaderBarePattern : _dayHeaderFullPattern).firstMatch(
+        trimmed,
+      );
+  if (match == null) {
+    return null;
+  }
+  return _dayChars[match.group(1)!];
+}
+
+/// 数一行里命中星期表头的格数。
+int _countDayCells(List<String?> row, {required bool bare}) {
+  int count = 0;
+  for (final String? cell in row) {
+    if (_matchDayHeader(cell, bare: bare) != null) {
+      count++;
+    }
+  }
+  return count;
+}
+
+// ───────────────────── 节次行标签 ─────────────────────
+
+/// 节次列一格的识别产物：编号 + 可选时间。
+class _SectionLabel {
+  const _SectionLabel(this.number, this.time);
+
+  /// 读到的节次编号；null = 该格只有时间（编号由行序推断）。
+  final int? number;
+
+  /// (start, end)，格式 `HH:MM`；null = 没读到时间。
+  final (String, String)? time;
+}
+
+/// 识别节次列格文本，覆盖四种形态：
+/// 1. `^\d{1,2}$`（纯编号）；
+/// 2. `第N节`；
+/// 3. `N\nHH:MM-HH:MM`（编号 + 时间，多行格）；
+/// 4. `HH:MM-HH:MM`（纯时间，编号靠行序）。
+///
+/// 都不是（如汉字「一」「二」、文字「上午」）→ null。
+_SectionLabel? _matchSectionLabel(String text) {
+  final List<String> lines = text
+      .split(RegExp(r'\r\n|\r|\n'))
+      .map((String line) => line.trim())
+      .where((String line) => line.isNotEmpty)
+      .toList();
+  int? number;
+  (String, String)? time;
+  for (final String line in lines) {
+    if (number == null) {
+      final RegExpMatch? numbered =
+          RegExp(r'^(\d{1,2})$').firstMatch(line) ??
+          RegExp(r'^第\s*(\d{1,2})\s*节$').firstMatch(line);
+      if (numbered != null) {
+        number = int.parse(numbered.group(1)!);
+        continue;
+      }
+    }
+    if (time == null) {
+      final (String, String)? range = _matchTimeRange(line);
+      if (range != null) {
+        time = range;
+      }
+    }
+  }
+  if (number == null && time == null) {
+    return null;
+  }
+  return _SectionLabel(number, time);
+}
+
+/// `HH:MM-HH:MM`（兼容 `–`/`~` 与空格），归一化为补零的 `HH:MM`；
+/// 非法时间（小时 > 23 / 分钟 > 59）视为没读到。
+(String, String)? _matchTimeRange(String line) {
+  final RegExpMatch? match = RegExp(
+    r'^(\d{1,2}):(\d{2})\s*[-–~]\s*(\d{1,2}):(\d{2})$',
+  ).firstMatch(line);
+  if (match == null) {
+    return null;
+  }
+  final int h1 = int.parse(match.group(1)!);
+  final int m1 = int.parse(match.group(2)!);
+  final int h2 = int.parse(match.group(3)!);
+  final int m2 = int.parse(match.group(4)!);
+  if (h1 > 23 || h2 > 23 || m1 > 59 || m2 > 59) {
+    return null;
+  }
+  return (
+    '${h1.toString().padLeft(2, '0')}:${m1.toString().padLeft(2, '0')}',
+    '${h2.toString().padLeft(2, '0')}:${m2.toString().padLeft(2, '0')}',
+  );
+}
+
+// ───────────────────── 三层条目统一 ─────────────────────
+
+/// 三层条目的统一中间结构（校验 + 聚合用）。
+class _RawEntry {
+  const _RawEntry({
+    required this.name,
+    required this.sectionStart,
+    required this.sectionEnd,
+    required this.weeks,
+    required this.location,
+    required this.teacher,
+    required this.fromGeneric,
+  });
+
+  factory _RawEntry.fromFirstLayer(JwxtCellEntry entry) => _RawEntry(
+    name: entry.name,
+    sectionStart: entry.sectionStart,
+    sectionEnd: entry.sectionEnd,
+    weeks: entry.weeks,
+    location: entry.location,
+    teacher: entry.teacher,
+    fromGeneric: false,
+  );
+
+  factory _RawEntry.fromGeneric(GenericCellEntry entry) => _RawEntry(
+    name: entry.name,
+    sectionStart: entry.sectionStart,
+    sectionEnd: entry.sectionEnd,
+    weeks: entry.weeks,
+    location: entry.location,
+    teacher: entry.teacher,
+    fromGeneric: true,
+  );
+
+  final String name;
+
+  /// 节次起；null = 格内没识别到，由行标签推断。
+  final int? sectionStart;
+
+  /// 节次止；null 同上。
+  final int? sectionEnd;
+
+  final Set<int> weeks;
+
+  final String location;
+
+  final String teacher;
+
+  /// 第 2/3 层来源：周次空集语义是「没识别到 → 填全部周」。
+  /// （第 1 层空集 = 乱码周次 → 跳过，保留原语义。）
+  final bool fromGeneric;
+}
+
+// ───────────────────── 主流程 ─────────────────────
+
 /// 解析整张工作表。
 ///
-/// - 定位含「星期一」的表头行，星期列从表头动态取（结构上即 C3..C9）；
+/// - **表头两级识别**：第一级 `(星期|周|礼拜)(一..日|1..7)` 完全匹配；
+///   仅当第一级在全表命中 < 3 个格时启用第二级裸字（不认裸数字）。
+///   表头行 = 第一个「≥ 3 个星期格」的行；
+/// - **星期列**：显式 `Map<列号, 星期>`，不假设连续 7 列、
+///   不假设从星期一开头；
+/// - **节次行推断**：星期列最小列号左侧为节次列，整列读不到编号时
+///   按物理行序递增（全空行不占号）；
+/// - **作息三态（E2）**：读到 ≥ 1 个有效时间才构造 periods，否则 null，
+///   绝不缩水，由调用方决定是否沿用现有作息；
+/// - **节次校验（E1）**：格内自带节次只做绝对校验 1..24，不与
+///   detectedSectionCount / 默认节数挂钩；
+/// - **课程格三层解析**：第 1 层 [parseCellText] 命中 ≥ 1 条直接用；
+///   命中 0 条走第 2 层 [parseGenericCell]，非兜底条目优先，
+///   只有兜底条目时计入 [JwxtImportResult.fallbackCount]；
 /// - 数据行扫到「注」开头或含「实践课程」的行为止；
-/// - 节次上界用 `Period.defaults.length`，不硬编码；
 /// - 同格/跨格重复（课名+教师+地点+星期+节次完全相同、周次不同）按位合并
 ///   weekMask；单双周互补课地点不同 → 不同 key → 仍是独立课程。
 JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
-  // 1. 定位表头行
+  // 1. 表头两级识别：先数全表第一级命中，< 3 才启用裸字回退
+  int firstLevelHits = 0;
+  for (final List<String?> row in rows) {
+    for (final String? cell in row) {
+      if (cell != null && _matchDayHeader(cell, bare: false) != null) {
+        firstLevelHits++;
+      }
+    }
+  }
+  final bool bareMode = firstLevelHits < 3;
   int headerRow = -1;
   for (int r = 0; r < rows.length; r++) {
-    if (_rowText(rows[r]).contains('星期一')) {
+    if (_countDayCells(rows[r], bare: bareMode) >= 3) {
       headerRow = r;
       break;
     }
@@ -189,16 +384,16 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
     );
   }
 
-  // 2. 星期列起始位置（表头行里「星期一」所在列，结构上即 0 基索引 2）
+  // 2. 星期列 Map（显式列号 → 星期，不假设连续/从周一开始）
+  final Map<int, int> dayColumns = <int, int>{};
   final List<String?> headerCells = rows[headerRow];
-  int weekColStart = -1;
   for (int c = 0; c < headerCells.length; c++) {
-    final String? cell = headerCells[c];
-    if (cell != null && cell.contains('星期一')) {
-      weekColStart = c;
-      break;
+    final int? dayWeek = _matchDayHeader(headerCells[c], bare: bareMode);
+    if (dayWeek != null) {
+      dayColumns[c] = dayWeek;
     }
   }
+  final int leftBound = dayColumns.keys.reduce((int a, int b) => a < b ? a : b);
 
   // 3. 元信息：注释行（全表扫「正式上课」）+ 学期名（表头行之前含「学期」的格）
   DateTime? week1Monday;
@@ -225,24 +420,105 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
     }
   }
 
-  // 4. 数据行 → 课程格 → 条目
-  final int maxSection = Period.defaults.length;
+  // 4. 数据区边界：「注」开头 / 含「实践课程」的行为止
+  int endRow = rows.length;
+  for (int r = headerRow + 1; r < rows.length; r++) {
+    final String text = _rowText(rows[r]);
+    if (text.trim().isEmpty) {
+      continue;
+    }
+    if (text.trim().startsWith('注') || text.contains('实践课程')) {
+      endRow = r;
+      break;
+    }
+  }
+
+  // 5. 节次列标签（leftBound 左侧第一个能识别的格）
+  final Map<int, _SectionLabel> labels = <int, _SectionLabel>{};
+  for (int r = headerRow + 1; r < endRow; r++) {
+    final List<String?> row = rows[r];
+    if (_rowText(row).trim().isEmpty) {
+      continue;
+    }
+    for (int c = 0; c < leftBound && c < row.length; c++) {
+      final String? cell = row[c];
+      if (cell == null || cell.trim().isEmpty) {
+        continue;
+      }
+      final _SectionLabel? label = _matchSectionLabel(cell);
+      if (label != null) {
+        labels[r] = label;
+        break;
+      }
+    }
+  }
+
+  // 6. 行节次号推断：有标签用标签编号，否则按物理行序递增
+  //（全空行不占号——上面的循环已跳过）。
+  //
+  // 已知限制：一行代表双节块的表格（如 5 行 = 10 节，每行两节连堂），
+  // 行推断会把每行当成单节——信息不足，无法拆分。这类表格的课程格
+  // 通常自带 (N-M节)（走第 1 层解析，不受行推断影响）；只有「格内
+  // 无节次」的条目才会用推断值，此时宁可错成单节也不丢弃。
+  final Map<int, int> rowSectionOf = <int, int>{};
+  int nextSection = 1;
+  for (int r = headerRow + 1; r < endRow; r++) {
+    if (_rowText(rows[r]).trim().isEmpty) {
+      continue;
+    }
+    final int? labeled = labels[r]?.number;
+    if (labeled != null) {
+      rowSectionOf[r] = labeled;
+      nextSection = labeled + 1;
+    } else {
+      rowSectionOf[r] = nextSection;
+      nextSection++;
+    }
+  }
+  final int detectedSectionCount = rowSectionOf.values.isEmpty
+      ? 0
+      : rowSectionOf.values.reduce((int a, int b) => a > b ? a : b);
+
+  // 7. 作息三态（E2）：读到 ≥ 1 个有效时间才构造 periods；
+  // 只有编号没时间 / 连编号都没有 → null（绝不补 --:-- 假时间）。
+  final Map<int, Period> periodByIndex = <int, Period>{};
+  for (final MapEntry<int, _SectionLabel> e in labels.entries) {
+    final (String, String)? time = e.value.time;
+    if (time == null) {
+      continue;
+    }
+    final int? index = e.value.number ?? rowSectionOf[e.key];
+    if (index == null || index < 1 || index > _absMaxSection) {
+      continue;
+    }
+    periodByIndex[index] = Period(index: index, start: time.$1, end: time.$2);
+  }
+  final List<Period>? periods = periodByIndex.isEmpty
+      ? null
+      : <Period>[
+          for (final int i in (periodByIndex.keys.toList()..sort()))
+            periodByIndex[i]!,
+        ];
+
+  // 8. 课程格三层解析 → 校验 → 聚合
+  // 第 2/3 层条目周次空集 → 填全部周（上界：元信息 totalWeeks，缺省 20）
+  final int weeksUpper = totalWeeks ?? 20;
+  final Set<int> allWeeks = <int>{
+    for (int w = minWeek; w <= maxWeek && w <= weeksUpper; w++) w,
+  };
   int skipped = 0;
+  int fallbackCount = 0;
   // key 用 record（替代 '|' 拼接字符串），value 累积 weekMask
   final Map<(String, String, String, int, int, int), int> merged =
       <(String, String, String, int, int, int), int>{};
-  for (int r = headerRow + 1; r < rows.length; r++) {
+  for (int r = headerRow + 1; r < endRow; r++) {
     final List<String?> row = rows[r];
-    final String rowText = _rowText(row);
-    if (rowText.trim().isEmpty) {
+    if (_rowText(row).trim().isEmpty) {
       continue;
     }
-    // 实践课程行 / 注释行 → 数据区结束
-    if (rowText.trim().startsWith('注') || rowText.contains('实践课程')) {
-      break;
-    }
-    for (int dayWeek = 1; dayWeek <= 7; dayWeek++) {
-      final int col = weekColStart + dayWeek - 1;
+    for (final MapEntry<int, int> column in dayColumns.entries) {
+      final int dayWeek = column.value;
+      final int col = column.key;
       if (col < 0 || col >= row.length) {
         continue;
       }
@@ -250,12 +526,63 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
       if (cell == null || cell.trim().isEmpty) {
         continue;
       }
-      for (final JwxtCellEntry entry in parseCellText(cell)) {
-        final bool sectionValid =
-            entry.sectionStart >= 1 &&
-            entry.sectionEnd >= entry.sectionStart &&
-            entry.sectionEnd <= maxSection;
-        if (!sectionValid || entry.weeks.isEmpty || entry.name.isEmpty) {
+
+      // 第 1 层：正方 `/` 紧凑格式（命中 ≥ 1 条 → 整格不进第 2 层）
+      List<_RawEntry> entries = <_RawEntry>[
+        for (final JwxtCellEntry e in parseCellText(cell))
+          _RawEntry.fromFirstLayer(e),
+      ];
+      if (entries.isEmpty) {
+        final List<GenericCellEntry> generic = parseGenericCell(cell);
+        final List<GenericCellEntry> solid = <GenericCellEntry>[
+          for (final GenericCellEntry e in generic)
+            if (!e.fallback) e,
+        ];
+        if (solid.isNotEmpty) {
+          entries = <_RawEntry>[
+            for (final GenericCellEntry e in solid) _RawEntry.fromGeneric(e),
+          ];
+        } else if (generic.isNotEmpty) {
+          // 第 3 层兜底：宁可粗糙也要出东西，绝不静默丢弃
+          fallbackCount += generic.length;
+          entries = <_RawEntry>[
+            for (final GenericCellEntry e in generic) _RawEntry.fromGeneric(e),
+          ];
+        }
+      }
+
+      for (final _RawEntry entry in entries) {
+        // 节次：格内自带 → 绝对校验（E1，不与 detectedSectionCount 挂钩）；
+        // 格内没有 → 行标签推断值
+        final int sectionStart;
+        final int sectionEnd;
+        if (entry.sectionStart != null && entry.sectionEnd != null) {
+          if (entry.sectionStart! < 1 ||
+              entry.sectionEnd! > _absMaxSection ||
+              entry.sectionEnd! < entry.sectionStart!) {
+            skipped++;
+            continue;
+          }
+          sectionStart = entry.sectionStart!;
+          sectionEnd = entry.sectionEnd!;
+        } else {
+          final int? rowSection = rowSectionOf[r];
+          if (rowSection == null ||
+              rowSection < 1 ||
+              rowSection > _absMaxSection) {
+            skipped++;
+            continue;
+          }
+          sectionStart = rowSection;
+          sectionEnd = rowSection;
+        }
+        // 周次：第 1 层空集 = 乱码周次 → 跳过（原语义）；
+        // 第 2/3 层空集 = 没识别到 → 填全部周
+        Set<int> weeks = entry.weeks;
+        if (weeks.isEmpty && entry.fromGeneric) {
+          weeks = allWeeks;
+        }
+        if (weeks.isEmpty || entry.name.isEmpty) {
           skipped++;
           continue;
         }
@@ -264,10 +591,10 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
           entry.teacher,
           entry.location,
           dayWeek,
-          entry.sectionStart,
-          entry.sectionEnd,
+          sectionStart,
+          sectionEnd,
         );
-        merged[key] = (merged[key] ?? 0) | weekMaskFromWeeks(entry.weeks);
+        merged[key] = (merged[key] ?? 0) | weekMaskFromWeeks(weeks);
       }
     }
   }
@@ -307,6 +634,10 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
       week1Monday: week1Monday,
       totalWeeks: totalWeeks,
       semesterName: semesterName,
+      periods: periods,
+      usedDefaultPeriods: periods == null,
+      detectedSectionCount: detectedSectionCount,
+      fallbackCount: fallbackCount,
       error: '未识别到任何课程，请确认选的是教务系统导出的课表',
     );
   }
@@ -316,6 +647,10 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
     week1Monday: week1Monday,
     totalWeeks: totalWeeks,
     semesterName: semesterName,
+    periods: periods,
+    usedDefaultPeriods: periods == null,
+    detectedSectionCount: detectedSectionCount,
+    fallbackCount: fallbackCount,
   );
 }
 

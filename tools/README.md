@@ -1,14 +1,29 @@
 # 开发辅助脚本
 
-`tools/` 下有三个脚本，都不参与 App 运行时。
+`tools/` 下的脚本都不参与 App 运行时。
 
 | 脚本 | 用途 |
 |---|---|
 | `release.ps1` | 一条命令构建可分发、签名正确的 release APK |
 | `verify_jwxt_xls.dart` | 用真实教务 `.xls` 跑一遍导入管线，验证解析结果 |
 | `gen_timetable_json.dart` | 把「按周展开」的教务 JSON 转成 App 的存储格式（测试/恢复数据用） |
+| `gdust_crawl/` | 从教务系统抓课表，生成可直接导入的 `timetable.json` |
 
 ---
+
+# 0. 抓取课表（`tools/gdust_crawl/`）
+
+两套实现，都**不硬编码接口细节**（以免猜错），而是以你从浏览器里复制的
+一条真实可用请求为准：
+
+| 文件 | 说明 |
+|---|---|
+| `console_snippet.js` | **推荐**。粘到浏览器控制台就能跑，不用装 Python、不用复制 Cookie |
+| `crawl.py` | Python 版，纯标准库。适合脚本化 |
+| `selftest.py` | `crawl.py` 的纯逻辑自测（不联网） |
+
+⚠️ **没有在真实教务系统上验证过**——接口细节只有你自己能确认。
+详细操作步骤见 [`gdust_crawl/README.md`](gdust_crawl/README.md)。
 
 # 1. 发布 APK（`tools\release.ps1`）
 

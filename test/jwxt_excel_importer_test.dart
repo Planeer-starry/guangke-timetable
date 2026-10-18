@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:timetable/models/course.dart';
+import 'package:timetable/models/period.dart';
 import 'package:timetable/utils/jwxt_excel_importer.dart';
 import 'package:timetable/utils/week_mask.dart';
 
@@ -201,6 +202,231 @@ void main() {
       final Set<String> ids = result.courses.map((Course c) => c.id).toSet();
       expect(ids, hasLength(result.courses.length));
       expect(ids.every((String id) => id.startsWith('jw_')), isTrue);
+    });
+  });
+
+  group('E. 表头两级识别', () {
+    test('表头写「周一..周日」→ 能定位表头', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['2026-2027年第1学期'],
+        <String?>['节次', null, '周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+        <String?>[null, '一', '计算机网络/(3-4节)1-16周/松山湖 松3-302/张三/x/y/90/ /'],
+      ]);
+      expect(result.error, isNull);
+      expect(result.courses, hasLength(1));
+      expect(result.courses.single.dayWeek, 1);
+    });
+
+    test('表头只有周一到周五 → 只解析 5 列，不崩', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三', '周四', '周五'],
+        <String?>[
+          null,
+          '一',
+          null,
+          null,
+          null,
+          null,
+          '计算机网络/(3-4节)1-16周/松山湖 松3-302/张三/x/y/90/ /',
+        ],
+      ]);
+      expect(result.error, isNull);
+      expect(result.courses, hasLength(1));
+      expect(result.courses.single.dayWeek, 5);
+    });
+
+    test('表头第一级命中 < 3 → 启用裸字回退定位', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        // 裸字表头：'一' 在索引 1，因此课程也要放在索引 1 才是星期一
+        <String?>['节', '一', '二', '三', '四', '五', '六', '日'],
+        <String?>[
+          null,
+          '计算机网络/(3-4节)1-16周/松山湖 松3-302/张三/x/y/90/ /',
+        ],
+      ]);
+      expect(result.error, isNull);
+      expect(result.courses, hasLength(1));
+      expect(result.courses.single.dayWeek, 1);
+    });
+
+    test('裸字也不足 3 个 → 仍找不到表头', () {
+      final JwxtImportResult bad = parseJwxtWorkbook(<List<String?>>[
+        <String?>['项目', '一', '二'],
+      ]);
+      expect(bad.error, isNotNull);
+      expect(bad.courses, isEmpty);
+    });
+  });
+
+  group('F. 节次行推断与作息三态', () {
+    test('节次列 ["1","2","3"] → detectedSectionCount=3，periods=null', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>['1', null, '课A/(1-2节)1-16周/楼/师/x/y/90/ /'],
+        <String?>['2'],
+        <String?>['3'],
+      ]);
+      expect(result.error, isNull);
+      expect(result.detectedSectionCount, 3);
+      expect(result.periods, isNull);
+      expect(result.usedDefaultPeriods, isTrue);
+    });
+
+    test(
+      '节次列 ["1\\n08:00-08:45", ...] → periods 构造、usedDefaultPeriods=false',
+      () {
+        final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+          <String?>['学期'],
+          <String?>['节次', null, '周一', '周二', '周三'],
+          <String?>['1\n08:00-08:45', null, '课A/(1-2节)1-16周/楼/师/x/y/90/ /'],
+          <String?>['2\n08:55-09:40'],
+        ]);
+        expect(result.usedDefaultPeriods, isFalse);
+        expect(result.periods, isNotNull);
+        expect(result.periods!.map((Period p) => p.index), <int>[1, 2]);
+        expect(result.periods!.first.start, '08:00');
+        expect(result.periods!.first.end, '08:45');
+        expect(result.periods!.last.start, '08:55');
+        expect(result.periods!.last.end, '09:40');
+      },
+    );
+
+    test('节次列汉字数字读不到编号 → periods=null、usedDefaultPeriods=true', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>['一', null, '课A/(1-2节)1-16周/楼/师/x/y/90/ /'],
+        <String?>['二'],
+        <String?>['三'],
+      ]);
+      expect(result.periods, isNull);
+      expect(result.usedDefaultPeriods, isTrue);
+      // 汉字读不到 → 按物理行序递增，3 个非空数据行 → 3
+      expect(result.detectedSectionCount, 3);
+    });
+
+    test('格内无节次 → 用行标签推断（第 2 层条目）', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>['1'],
+        <String?>['3', null, '高等数学\n张三\n1-16周\n教1-201'],
+      ]);
+      expect(result.error, isNull);
+      expect(result.courses, hasLength(1));
+      final Course course = result.courses.single;
+      expect(course.name, '高等数学');
+      expect(course.sectionStart, 3);
+      expect(course.sectionEnd, 3);
+      expect(course.dayWeek, 1);
+      expect(weeksFromWeekMask(course.weekMask), {
+        for (int i = 1; i <= 16; i++) i,
+      });
+    });
+  });
+
+  group('G. E1 绝对校验（不与行推断节数挂钩）', () {
+    test('8 节表格 + 格内 (9-10节) → 不被节次上界误杀', () {
+      final List<List<String?>> rows = <List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>['1', null, '晚课/(9-10节)1-16周/楼/师/x/y/90/ /'],
+        for (int i = 2; i <= 8; i++) <String?>['$i'],
+      ];
+      final JwxtImportResult result = parseJwxtWorkbook(rows);
+      expect(result.error, isNull);
+      expect(result.detectedSectionCount, 8);
+      expect(result.courses, hasLength(1));
+      expect(result.courses.single.sectionStart, 9);
+      expect(result.courses.single.sectionEnd, 10);
+    });
+
+    test('行推断只能得 5 的表，格内 (1-2)..(9-10) 全部保留', () {
+      const String suffix = '/x/y/90/ /';
+      final List<List<String?>> rows = <List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>[null, '一', '课一/(1-2节)1-16周/楼/师$suffix'],
+        <String?>[null, '二', '课二/(3-4节)1-16周/楼/师$suffix'],
+        <String?>[null, '三', '课三/(5-6节)1-16周/楼/师$suffix'],
+        <String?>[null, '四', '课四/(7-8节)1-16周/楼/师$suffix'],
+        <String?>[null, '五', '课五/(9-10节)1-16周/楼/师$suffix'],
+      ];
+      final JwxtImportResult result = parseJwxtWorkbook(rows);
+      expect(result.error, isNull);
+      expect(result.skippedCount, 0);
+      expect(result.courses, hasLength(5));
+      expect(result.detectedSectionCount, 5);
+      expect(result.courses.map((Course c) => c.sectionStart), <int>[
+        1,
+        3,
+        5,
+        7,
+        9,
+      ]);
+      expect(result.courses.map((Course c) => c.sectionEnd), <int>[
+        2,
+        4,
+        6,
+        8,
+        10,
+      ]);
+    });
+  });
+
+  group('H. 第 2/3 层接入', () {
+    test('第 1 层未命中 → 第 2 层接管（青果多课锚点切分）', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>[
+          '3',
+          null,
+          '军事理论\n张三\n11-14周\n松6-604\n高等数学\n李四\n1-16周\n教1-201',
+        ],
+      ]);
+      expect(result.error, isNull);
+      expect(result.fallbackCount, 0);
+      expect(result.courses, hasLength(2));
+      final Course first = result.courses.firstWhere(
+        (Course c) => c.name == '军事理论',
+      );
+      expect(first.teacher, '张三');
+      expect(first.location, '松6-604');
+      expect(first.sectionStart, 3);
+      expect(first.sectionEnd, 3);
+      expect(weeksFromWeekMask(first.weekMask), <int>{11, 12, 13, 14});
+      final Course second = result.courses.firstWhere(
+        (Course c) => c.name == '高等数学',
+      );
+      expect(second.teacher, '李四');
+      expect(second.location, '教1-201');
+      expect(second.sectionStart, 3);
+      expect(weeksFromWeekMask(second.weekMask), {
+        for (int i = 1; i <= 16; i++) i,
+      });
+    });
+
+    test('第 3 层兜底：fallbackCount 计数、周次填全部周', () {
+      final JwxtImportResult result = parseJwxtWorkbook(<List<String?>>[
+        <String?>['学期'],
+        <String?>['节次', null, '周一', '周二', '周三'],
+        <String?>['2', null, '1-16周\n教1-201'],
+      ]);
+      expect(result.error, isNull);
+      expect(result.fallbackCount, 1);
+      expect(result.courses, hasLength(1));
+      final Course course = result.courses.single;
+      expect(course.name, '1-16周 教1-201');
+      expect(course.sectionStart, 2);
+      expect(course.sectionEnd, 2);
+      // 无 totalWeeks 元信息 → 全部周按缺省上界 20 填
+      expect(weeksFromWeekMask(course.weekMask), {
+        for (int i = 1; i <= 20; i++) i,
+      });
     });
   });
 }
