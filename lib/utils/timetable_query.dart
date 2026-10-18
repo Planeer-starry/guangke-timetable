@@ -34,7 +34,7 @@ class CourseOccurrence {
 /// 规则：先按 `course.weekMask` 用 `hasClassInWeek` 筛出该周有课的课程，
 /// 再查 `overrides` 里有没有 `(courseId, week)` 匹配——
 /// 有则用 override 的 dayWeek / sectionStart / sectionEnd / location，
-/// 无则用课程自身的值。Course 模型保持不可变，不引入 copyWith。
+/// 无则用课程自身的值。Course 模型保持不可变（编辑走 copyWith 换新实例）。
 List<CourseOccurrence> coursesForWeek(TimetableData data, int week) {
   final List<CourseOccurrence> result = <CourseOccurrence>[];
   for (final Course course in data.courses) {

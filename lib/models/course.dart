@@ -78,4 +78,31 @@ class Course {
       'note': note,
     };
   }
+
+  /// 复制并替换部分字段。**id 不在参数里**：id 必须保持稳定
+  /// （overrides 靠它关联课程，改 id 会让调课记录悬空）。
+  Course copyWith({
+    String? name,
+    String? teacher,
+    String? location,
+    int? colorValue,
+    int? dayWeek,
+    int? sectionStart,
+    int? sectionEnd,
+    int? weekMask,
+    String? note,
+  }) {
+    return Course(
+      id: id,
+      name: name ?? this.name,
+      teacher: teacher ?? this.teacher,
+      location: location ?? this.location,
+      colorValue: colorValue ?? this.colorValue,
+      dayWeek: dayWeek ?? this.dayWeek,
+      sectionStart: sectionStart ?? this.sectionStart,
+      sectionEnd: sectionEnd ?? this.sectionEnd,
+      weekMask: weekMask ?? this.weekMask,
+      note: note ?? this.note,
+    );
+  }
 }

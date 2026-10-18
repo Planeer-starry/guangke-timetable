@@ -6,10 +6,16 @@ import 'package:timetable/utils/week_mask.dart';
 import 'package:timetable/utils/week_math.dart';
 
 /// 课程详情底部弹窗。
+///
+/// [onEdit] / [onDelete] 传入时底部显示操作按钮（可空 = 不显示）。
+/// 点击按钮会**先关掉本弹窗再调用回调**，避免编辑页 / 删除确认框
+/// 被本弹窗遮住。
 Future<void> showCourseDetailSheet(
   BuildContext context, {
   required CourseOccurrence occurrence,
   required List<Period> periods,
+  VoidCallback? onEdit,
+  VoidCallback? onDelete,
 }) {
   return showModalBottomSheet<void>(
     context: context,
@@ -53,6 +59,42 @@ Future<void> showCourseDetailSheet(
               ),
               if (occurrence.course.note.isNotEmpty)
                 Text('备注：${occurrence.course.note}'),
+              if (onEdit != null || onDelete != null) ...<Widget>[
+                const SizedBox(height: 16),
+                Row(
+                  children: <Widget>[
+                    if (onEdit != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            onEdit();
+                          },
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('编辑'),
+                        ),
+                      ),
+                    if (onEdit != null && onDelete != null)
+                      const SizedBox(width: 12),
+                    if (onDelete != null)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            onDelete();
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Theme.of(context)
+                                .colorScheme
+                                .error,
+                          ),
+                          icon: const Icon(Icons.delete_outline),
+                          label: const Text('删除'),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

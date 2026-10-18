@@ -92,6 +92,22 @@ class TimetableData {
     };
   }
 
+  /// 复制并替换部分字段。schema 固定为契约版本，不在参数里。
+  TimetableData copyWith({
+    TimetableMeta? meta,
+    List<Period>? periods,
+    List<Course>? courses,
+    List<CourseOverride>? overrides,
+  }) {
+    return TimetableData(
+      schema: schema,
+      meta: meta ?? this.meta,
+      periods: periods ?? this.periods,
+      courses: courses ?? this.courses,
+      overrides: overrides ?? this.overrides,
+    );
+  }
+
   /// 「学期未设置」的元信息：周次基准取 [unsetWeek1Monday]。
   static TimetableMeta _unsetMeta() {
     return TimetableMeta(

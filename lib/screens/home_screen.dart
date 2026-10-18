@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:timetable/constants/app_config.dart';
+import 'package:timetable/models/course.dart';
 import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/update_info.dart';
+import 'package:timetable/screens/course_edit_screen.dart';
 import 'package:timetable/screens/import_flow.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/screens/settings_screen.dart';
+import 'package:timetable/services/course_editor.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/update_service.dart';
@@ -240,6 +243,85 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     WidgetService.refreshAll(updated);
   }
 
+  // ───────────────────────── 课程编辑 ─────────────────────────
+
+  /// 新增课程：默认选当前浏览周；返回数据由 [_applyCourseUpdate] 落盘。
+  Future<void> _addCourse() async {
+    final TimetableData? updated = await Navigator.of(context)
+        .push<TimetableData>(
+          MaterialPageRoute<TimetableData>(
+            builder: (_) => CourseEditScreen(
+              data: _data.value,
+              course: null,
+              defaultWeek: _displayWeek.value,
+            ),
+          ),
+        );
+    await _applyCourseUpdate(updated);
+  }
+
+  /// 编辑课程：id 与颜色不变，其余字段由编辑页返回。
+  Future<void> _editCourse(Course course) async {
+    final TimetableData? updated = await Navigator.of(context)
+        .push<TimetableData>(
+          MaterialPageRoute<TimetableData>(
+            builder: (_) => CourseEditScreen(data: _data.value, course: course),
+          ),
+        );
+    await _applyCourseUpdate(updated);
+  }
+
+  /// 删除课程：二次确认 → 删课（连带 overrides）→ 落盘。
+  Future<void> _confirmDeleteCourse(Course course) async {
+    final bool? ok = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('删除课程'),
+        content: Text('确定删除「${course.name}」吗？该课程的所有调课记录也会一并删除。'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) {
+      return;
+    }
+    await _applyCourseUpdate(CourseEditor.deleteCourse(_data.value, course.id));
+  }
+
+  /// 编辑/删除统一落盘：保存 → 更新内存 → 刷小组件。
+  /// 三个入口共用，避免同样的三行在 _add/_edit/_delete 里复制三遍。
+  Future<void> _applyCourseUpdate(TimetableData? updated) async {
+    if (updated == null) {
+      return;
+    }
+    try {
+      await widget.storage.save(updated);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    _data.value = updated;
+    await WidgetService.refreshAll(updated);
+  }
+
   // ───────────────────────── 导入流程 ─────────────────────────
 
   /// 打开导入流程（文件 / 剪贴板），与设置页共用（import_flow.dart）；
@@ -280,6 +362,12 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           },
         ),
         actions: <Widget>[
+          IconButton(
+            tooltip: '新增课程',
+            iconSize: windowSize.isExpanded ? 28 : 24,
+            icon: const Icon(Icons.add),
+            onPressed: _addCourse,
+          ),
           IconButton(
             tooltip: '导入课表',
             iconSize: windowSize.isExpanded ? 28 : 24,
@@ -437,7 +525,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     List<Period> periods,
   ) async {
     if (cell.length == 1) {
-      showCourseDetailSheet(context, occurrence: cell.single, periods: periods);
+      final CourseOccurrence occurrence = cell.single;
+      showCourseDetailSheet(
+        context,
+        occurrence: occurrence,
+        periods: periods,
+        onEdit: () => _editCourse(occurrence.course),
+        onDelete: () => _confirmDeleteCourse(occurrence.course),
+      );
       return;
     }
     final CourseOccurrence?
@@ -481,7 +576,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     // 跨 await 后使用 BuildContext 必须检查 context.mounted，
     // 不能用 State.mounted（lint: use_build_context_synchronously）
     if (picked != null && context.mounted) {
-      showCourseDetailSheet(context, occurrence: picked, periods: periods);
+      showCourseDetailSheet(
+        context,
+        occurrence: picked,
+        periods: periods,
+        onEdit: () => _editCourse(picked.course),
+        onDelete: () => _confirmDeleteCourse(picked.course),
+      );
     }
   }
 
