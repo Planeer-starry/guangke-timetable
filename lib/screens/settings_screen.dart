@@ -39,6 +39,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   int _versionCode = 0;
   String _packageName = '';
 
+  /// 是否存在导入快照（「恢复导入的原始课表」入口的显隐依据）。
+  bool _hasImportedSnapshot = false;
+
   /// 主题模式的显示文案（存储值 → 中文）。
   static const Map<String, String> _themeModeLabels = <String, String>{
     'system': '跟随系统',
@@ -50,6 +53,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void initState() {
     super.initState();
     _loadPackageInfo();
+    _checkImportedSnapshot();
+  }
+
+  Future<void> _checkImportedSnapshot() async {
+    final bool has = await widget.storage.hasImportedSnapshot();
+    if (!mounted) {
+      return;
+    }
+    setState(() => _hasImportedSnapshot = has);
   }
 
   Future<void> _loadPackageInfo() async {
@@ -107,6 +119,64 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     await widget.settings.setThemeMode(picked);
+  }
+
+  /// 恢复导入的原始课表：确认后用快照整体替换当前数据。
+  ///
+  /// 恢复本身是重置操作，**不进撤销栈**（栈在 HomeScreen，这里拿不到；
+  /// 且语义上恢复 = 放弃所有手动修改，不该被「撤销」回去）。
+  /// 快照文件保留——用户再改乱后仍可再次恢复。
+  Future<void> _confirmRestoreImported() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) => AlertDialog(
+        title: const Text('恢复导入的原始课表'),
+        content: const Text('当前的所有手动修改（编辑 / 移动 / 停课 / 删除）都会丢失。'),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('恢复'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    final TimetableData? snapshot = await widget.storage.loadImportedSnapshot();
+    if (snapshot == null) {
+      // 快照在进入设置页后被动过/损坏：入口隐藏并提示
+      if (mounted) {
+        setState(() => _hasImportedSnapshot = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('快照不可用，无法恢复')));
+      }
+      return;
+    }
+    try {
+      await widget.storage.save(snapshot);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('恢复失败：$error')));
+      }
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    widget.data.value = snapshot;
+    WidgetService.refreshAll(snapshot);
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已恢复到最近一次导入的状态')));
   }
 
   /// 清空课表：危险操作，二次确认后全量重置（含学期设置）。
@@ -307,6 +377,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             data: widget.data,
           ),
         ),
+        // 仅存在导入快照时显示（initState 异步查一次）
+        if (_hasImportedSnapshot)
+          ListTile(
+            leading: const Icon(Icons.restore),
+            title: const Text('恢复导入的原始课表'),
+            subtitle: const Text('丢弃所有手动修改，回到最近一次导入的状态'),
+            onTap: _confirmRestoreImported,
+          ),
         ListTile(
           leading: const Icon(Icons.delete_outline),
           title: const Text('清空课表'),

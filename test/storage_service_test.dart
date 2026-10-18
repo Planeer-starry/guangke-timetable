@@ -23,6 +23,10 @@ void main() {
   String filePath() =>
       '${tempDir.path}${Platform.pathSeparator}${StorageService.fileName}';
 
+  String snapshotFilePath() =>
+      '${tempDir.path}${Platform.pathSeparator}'
+      '${StorageService.snapshotFileName}';
+
   TimetableData sampleData({String courseName = '计算机网络'}) {
     return TimetableData.fromJson(<String, dynamic>{
       'schema': 1,
@@ -110,6 +114,66 @@ void main() {
 
       final TimetableData loaded = await service.load();
       expect(loaded.courses.single.name, '高等数学');
+
+      final List<String> names = (await tempDir.list().toList())
+          .map((FileSystemEntity e) => e.path)
+          .toList();
+      expect(names.any((String p) => p.endsWith('.tmp')), isFalse);
+      expect(names.any((String p) => p.endsWith('.bak')), isFalse);
+    });
+  });
+
+  group('导入快照（saveImportedSnapshot / loadImportedSnapshot）', () {
+    test('saveImportedSnapshot 后 hasImportedSnapshot == true', () async {
+      final StorageService service = newService();
+
+      await service.saveImportedSnapshot(sampleData());
+
+      expect(await service.hasImportedSnapshot(), isTrue);
+    });
+
+    test('loadImportedSnapshot 返回内容与保存的一致', () async {
+      final StorageService service = newService();
+
+      await service.saveImportedSnapshot(sampleData(courseName: '大学物理'));
+
+      final TimetableData? loaded = await service.loadImportedSnapshot();
+      expect(loaded, isNotNull);
+      expect(loaded!.courses.single.name, '大学物理');
+      expect(loaded.meta.week1Monday, DateTime(2026, 9, 7));
+    });
+
+    test(
+      '无快照时 hasImportedSnapshot == false，loadImportedSnapshot 返回 null',
+      () async {
+        final StorageService service = newService();
+
+        expect(await service.hasImportedSnapshot(), isFalse);
+        expect(await service.loadImportedSnapshot(), isNull);
+      },
+    );
+
+    test('快照文件损坏（非法 JSON）→ loadImportedSnapshot 返回 null 不抛', () async {
+      await File(snapshotFilePath()).writeAsString('{broken json');
+      final StorageService service = newService();
+
+      final TimetableData? loaded = await service.loadImportedSnapshot();
+
+      expect(loaded, isNull);
+    });
+
+    test('连续覆盖快照 → 读回为最新，且不残留 .tmp/.bak、不影响主文件', () async {
+      final StorageService service = newService();
+      await service.save(sampleData(courseName: '主文件课'));
+
+      await service.saveImportedSnapshot(sampleData(courseName: '第一次导入'));
+      await service.saveImportedSnapshot(sampleData(courseName: '第二次导入'));
+
+      final TimetableData? snapshot = await service.loadImportedSnapshot();
+      expect(snapshot!.courses.single.name, '第二次导入');
+      // 主文件不受快照写入影响
+      final TimetableData main = await service.load();
+      expect(main.courses.single.name, '主文件课');
 
       final List<String> names = (await tempDir.list().toList())
           .map((FileSystemEntity e) => e.path)

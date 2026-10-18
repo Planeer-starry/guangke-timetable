@@ -284,6 +284,15 @@ class _ImportFlow {
           .showSnackBar(SnackBar(content: Text('保存失败：$error')));
       return;
     }
+    // 主数据落盘成功后存「导入快照」（J4 恢复入口的数据源）。
+    // 快照失败不阻断导入主流程、也不弹错误提示——
+    // 此时导入本身已成功，弹错会误导用户以为导入失败；
+    // 下次导入会重新覆盖快照，损失只是本次会话没有恢复点。
+    try {
+      await storage.saveImportedSnapshot(updated);
+    } catch (error) {
+      debugPrint('导入快照保存失败：$error');
+    }
     _emitUpdated(updated);
     if (!updated.semesterConfigured && context.mounted) {
       // 导入成功但学期仍未配置（JSON 路径且从未设置过）：

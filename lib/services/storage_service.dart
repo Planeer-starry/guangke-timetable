@@ -18,6 +18,9 @@ class StorageService {
   /// 课表文件名。
   static const String fileName = 'timetable.json';
 
+  /// 导入快照文件名（与主文件同目录，恢复入口的数据源）。
+  static const String snapshotFileName = 'imported.timetable.json';
+
   /// 便利工厂：取应用文档目录。仅供 App 运行时使用，测试请用构造函数注入。
   static Future<StorageService> forApp() async {
     final Directory dir = await getApplicationDocumentsDirectory();
@@ -25,6 +28,9 @@ class StorageService {
   }
 
   File get _file => File('${_dir.path}${Platform.pathSeparator}$fileName');
+
+  File get _snapshotFile =>
+      File('${_dir.path}${Platform.pathSeparator}$snapshotFileName');
 
   /// 读取课表。
   ///
@@ -60,23 +66,63 @@ class StorageService {
     }
   }
 
-  /// 保存课表（原子写）。
+  /// 保存课表（原子写，流程见 [_atomicWrite]）。
+  Future<void> save(TimetableData data) async {
+    await _atomicWrite(_file, _encode(data));
+  }
+
+  // ───────────────────── 导入快照（J4：恢复导入的原始课表） ─────────────────────
+
+  /// 保存「最近一次导入」的快照（原子写，与主文件同一套流程）。
+  Future<void> saveImportedSnapshot(TimetableData data) async {
+    await _atomicWrite(_snapshotFile, _encode(data));
+  }
+
+  /// 读取导入快照：文件不存在 / 解析失败 → null，**绝不抛**。
+  ///
+  /// 与 [load] 不同，损坏的快照不备份改名——快照只是恢复点，
+  /// 下次导入会直接覆盖，留备份没有意义。
+  Future<TimetableData?> loadImportedSnapshot() async {
+    final File file = _snapshotFile;
+    if (!await file.exists()) {
+      return null;
+    }
+    try {
+      final String content = await file.readAsString();
+      final Object? decoded = jsonDecode(content);
+      if (decoded is! Map<String, dynamic>) {
+        return null;
+      }
+      return TimetableData.fromJson(decoded);
+    } catch (error) {
+      debugPrint('导入快照解析失败：$error');
+      return null;
+    }
+  }
+
+  /// 是否存在导入快照（设置页恢复入口的显隐依据）。
+  Future<bool> hasImportedSnapshot() async {
+    return _snapshotFile.exists();
+  }
+
+  String _encode(TimetableData data) {
+    return const JsonEncoder.withIndent('  ').convert(data.toJson());
+  }
+
+  /// 原子写：tmp → rename，主文件与快照共用。
   ///
   /// 流程：
-  /// 1. 完整 JSON 先写**同目录**临时文件 `timetable.json.tmp` 并 flush
+  /// 1. 完整 JSON 先写**同目录**临时文件 `.tmp` 并 flush
   ///    （同目录保证 rename 不跨分区，这是原子性的前提）；
-  /// 2. 目标已存在时先把它 rename 成 `timetable.json.bak`
+  /// 2. 目标已存在时先把它 rename 成 `.bak`
   ///    （Windows 上 rename 到已存在的目标可能失败）；
   /// 3. `tmp` rename 成目标；若失败则把 `.bak` 改回（回滚，旧数据不丢）再抛错；
   /// 4. 成功后删除 `.bak`。
   ///
-  /// 任何时刻 `timetable.json` 要么是旧的完整文件、要么是新的完整文件。
-  Future<void> save(TimetableData data) async {
-    final File file = _file;
+  /// 任何时刻目标文件要么是旧的完整文件、要么是新的完整文件。
+  Future<void> _atomicWrite(File file, String content) async {
     final File tmp = File('${file.path}.tmp');
     final File bak = File('${file.path}.bak');
-    final String content = const JsonEncoder.withIndent('  ')
-        .convert(data.toJson());
     await tmp.writeAsString(content, flush: true);
 
     final bool hasOld = await file.exists();
@@ -93,7 +139,7 @@ class StorageService {
         try {
           await bak.rename(file.path);
         } catch (rollbackError) {
-          debugPrint('课表文件回滚失败：$rollbackError');
+          debugPrint('文件回滚失败：$rollbackError');
         }
       }
       rethrow;
