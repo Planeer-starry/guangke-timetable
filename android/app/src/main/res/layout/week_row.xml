@@ -7,14 +7,17 @@
     android:orientation="horizontal"
     android:gravity="center_vertical">
 
+    <!-- 行标签两行显示：第 1 行节次区间（1-2），第 2 行开始时间（08:30）。
+         只显示节次号的话，用户看小组件还得回 App 查几点上课。 -->
     <TextView
         android:id="@+id/row_label"
-        android:layout_width="32dp"
+        android:layout_width="36dp"
         android:layout_height="wrap_content"
         android:textSize="@dimen/widget_grid_cell_size"
         android:textColor="@color/widget_sub"
         android:gravity="center"
-        android:maxLines="1" />
+        android:lineSpacingExtra="1dp"
+        android:maxLines="2" />
 
     <LinearLayout
         android:id="@+id/week_cells"

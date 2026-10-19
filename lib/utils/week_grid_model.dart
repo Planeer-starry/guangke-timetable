@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/utils/week_math.dart';
@@ -79,8 +80,29 @@ class WeekSnapshot {
   };
 }
 
-/// 固定的 5 个双节块行标签。
-const List<String> weekRowLabels = <String>['1-2', '3-4', '5-6', '7-8', '9-10'];
+/// 固定的 5 个双节块的节次区间（行结构与作息无关，永远 5 行）。
+const List<(int, int)> weekRowSpans = <(int, int)>[
+  (1, 2),
+  (3, 4),
+  (5, 6),
+  (7, 8),
+  (9, 10),
+];
+
+/// 行标签：`节次区间\n开始时间`，如 `1-2\n08:30`。
+///
+/// 只写「1-2」的话，用户看小组件还得回 App 查几点上课；小组件就是拿来
+/// 一眼看的，所以把该双节块的开始时间也标上。
+///
+/// 作息缺失或越界（脏数据）时退回纯节次号，绝不抛异常。
+List<String> weekRowLabelsFor(List<Period> periods) {
+  return <String>[
+    for (final (int start, int end) in weekRowSpans)
+      start >= 1 && start <= periods.length
+          ? '$start-$end\n${periods[start - 1].start}'
+          : '$start-$end',
+  ];
+}
 
 /// 序列化成 `week_grids` 键的 JSON（顶层 `{"weeks": [...]}`）。
 String weekGridsEncode(List<WeekSnapshot> snapshots) {
@@ -141,8 +163,10 @@ WeekSnapshot _snapshotForWeek(TimetableData data, DateTime monday, int week) {
     }
   }
 
+  // 行标签带开始时间（1-2 / 08:30），一次算好 5 行共用
+  final List<String> rowLabels = weekRowLabelsFor(data.periods);
   final List<WeekRow> rows = <WeekRow>[];
-  for (int r = 0; r < weekRowLabels.length; r++) {
+  for (int r = 0; r < rowLabels.length; r++) {
     final List<WeekCell?> cells = <WeekCell?>[];
     for (int dayWeek = 1; dayWeek <= 7; dayWeek++) {
       final List<CourseOccurrence>? cellCourses = grid[(r, dayWeek)];
@@ -164,7 +188,7 @@ WeekSnapshot _snapshotForWeek(TimetableData data, DateTime monday, int week) {
         ),
       );
     }
-    rows.add(WeekRow(label: weekRowLabels[r], cells: cells));
+    rows.add(WeekRow(label: rowLabels[r], cells: cells));
   }
 
   return WeekSnapshot(

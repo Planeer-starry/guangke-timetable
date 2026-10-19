@@ -57,7 +57,7 @@ void main() {
     expect(weekSnapshots(TimetableData.empty(), saturday), isEmpty);
   });
 
-  test('形状正确：3 个快照、每快照 5 行 × 7 格、行标签固定', () {
+  test('形状正确：3 个快照、每快照 5 行 × 7 格、行标签带节次与开始时间', () {
     final List<WeekSnapshot> snapshots = weekSnapshots(_data(), saturday);
     expect(snapshots.length, 3);
     for (final WeekSnapshot s in snapshots) {
@@ -66,14 +66,48 @@ void main() {
       for (final WeekRow row in s.rows) {
         expect(row.cells.length, 7);
       }
+      // 行标签两行：节次区间 + 该双节块的开始时间（Period.defaults 的作息）
       expect(s.rows.map((WeekRow r) => r.label).toList(), <String>[
+        '1-2\n08:30',
+        '3-4\n10:25',
+        '5-6\n14:40',
+        '7-8\n16:30',
+        '9-10\n19:30',
+      ]);
+    }
+  });
+
+  group('weekRowLabelsFor', () {
+    test('正常作息 → 五个双节块各带开始时间', () {
+      expect(weekRowLabelsFor(Period.defaults), <String>[
+        '1-2\n08:30',
+        '3-4\n10:25',
+        '5-6\n14:40',
+        '7-8\n16:30',
+        '9-10\n19:30',
+      ]);
+    });
+
+    test('作息为空（未配置/脏数据）→ 退回纯节次号，不抛异常', () {
+      expect(weekRowLabelsFor(const <Period>[]), <String>[
         '1-2',
         '3-4',
         '5-6',
         '7-8',
         '9-10',
       ]);
-    }
+    });
+
+    test('作息只有 6 节（8 节制的学校等）→ 第 4/5 行退回纯节次号', () {
+      final List<Period> short = Period.defaults.take(6).toList();
+      final List<String> labels = weekRowLabelsFor(short);
+      expect(labels[0], '1-2\n08:30');
+      expect(labels[1], '3-4\n10:25');
+      expect(labels[2], '5-6\n14:40');
+      // 第 7 节起超出作息长度 → 不带时间
+      expect(labels[3], '7-8');
+      expect(labels[4], '9-10');
+    });
   });
 
   test('3-4 节的课落在 index 1，不落在 index 0', () {
@@ -193,7 +227,8 @@ void main() {
     final List<dynamic> rows = first['rows'] as List<dynamic>;
     expect(rows.length, 5);
     final Map<String, dynamic> row1 = rows[1] as Map<String, dynamic>;
-    expect(row1['label'], '3-4');
+    // 行标签两行：节次区间 + 开始时间（Kotlin 侧 TextView maxLines=2 直接渲染）
+    expect(row1['label'], '3-4\n10:25');
     final List<dynamic> cells = row1['cells'] as List<dynamic>;
     expect(cells[0], isNotNull);
     final Map<String, dynamic> cell = cells[0] as Map<String, dynamic>;

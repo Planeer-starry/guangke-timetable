@@ -20,7 +20,7 @@
 
         <TextView
             android:id="@+id/week_header_label"
-            android:layout_width="32dp"
+            android:layout_width="36dp"
             android:layout_height="wrap_content"
             android:textSize="@dimen/widget_grid_cell_size"
             android:textColor="@color/widget_sub"

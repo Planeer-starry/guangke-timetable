@@ -3,6 +3,7 @@ package com.planeer.timetable
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.graphics.Color
 import android.view.View
 import android.widget.RemoteViews
 import androidx.core.content.ContextCompat
@@ -89,9 +90,15 @@ class WeekWidgetProvider : HomeWidgetProvider() {
     for (day in 0..6) {
       val date = week.dates.getOrNull(day) ?: ""
       views.setTextViewText(headIds[day], "${dayNames[day]}\n$date")
-      if (day == todayIndex) {
-        views.setInt(headIds[day], "setBackgroundColor", highlightColor)
-      }
+      // ★ 每格都必须显式设背景，不能只给"今天"设。
+      // RemoteViews 是【增量应用】到已存在的 View 上的；表头这 7 个格子是
+      // 布局里固有的 View，updateAppWidget 时不会被重建。若今天之外的分支
+      // 什么都不做，昨天高亮的那格就会一直亮着，几天后满屏都是高亮。
+      views.setInt(
+          headIds[day],
+          "setBackgroundColor",
+          if (day == todayIndex) highlightColor else Color.TRANSPARENT,
+      )
     }
 
     views.removeAllViews(R.id.week_rows)
