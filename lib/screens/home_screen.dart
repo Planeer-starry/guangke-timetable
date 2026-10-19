@@ -18,6 +18,7 @@ import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/theme/week_grid_dimens.dart';
+import 'package:timetable/widgets/cell_action_sheet.dart';
 import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/utils/week_mask.dart';
@@ -483,68 +484,17 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       }
       occurrence = picked;
     }
-    final String? action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (BuildContext sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  '「${occurrence.course.name}」',
-                  style: Theme.of(sheetContext).textTheme.titleSmall,
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: const Text('编辑'),
-              onTap: () => Navigator.of(sheetContext).pop('edit'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.open_with),
-              title: const Text('移动到…'),
-              onTap: () => Navigator.of(sheetContext).pop('move'),
-            ),
-            // 同名课程多条（教务按周拆开的同一门课）才提供批量删除；
-            // 只有一条时用普通「删除」即可
-            if (CourseEditor.coursesNamed(
-                  _data.value,
-                  occurrence.course.name,
-                ).length >
-                1)
-              ListTile(
-                leading: Icon(
-                  Icons.delete_sweep,
-                  color: Theme.of(sheetContext).colorScheme.error,
-                ),
-                title: Text(
-                  '删除所有同名课程',
-                  style: TextStyle(
-                    color: Theme.of(sheetContext).colorScheme.error,
-                  ),
-                ),
-                onTap: () => Navigator.of(sheetContext).pop('delete_named'),
-              ),
-            ListTile(
-              leading: Icon(
-                Icons.delete_outline,
-                color: Theme.of(sheetContext).colorScheme.error,
-              ),
-              title: Text(
-                '删除',
-                style: TextStyle(
-                  color: Theme.of(sheetContext).colorScheme.error,
-                ),
-              ),
-              onTap: () => Navigator.of(sheetContext).pop('delete'),
-            ),
-          ],
-        ),
-      ),
+    // 同名课程多条（教务按周拆开的同一门课）才提供批量删除；
+    // 只有一条时用普通「删除」即可
+    final int sameNameCount = CourseEditor.coursesNamed(
+      _data.value,
+      occurrence.course.name,
+    ).length;
+    final String? action = await CellActionSheet.show(
+      context,
+      occurrence: occurrence,
+      periods: _data.value.periods,
+      sameNameCount: sameNameCount,
     );
     if (action == null || !context.mounted) {
       return;
