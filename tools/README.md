@@ -69,7 +69,7 @@
 
 ```
 release\jiankebiao-<版本号>.apk
-（例如 release\jiankebiao-1.2.1+4.apk）
+（例如 release\jiankebiao-1.3.0+5.apk）
 ```
 
 把这个文件通过微信 / QQ / 网盘发给同学即可。
