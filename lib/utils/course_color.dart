@@ -1,10 +1,16 @@
 /// 按课程名稳定取色的纯函数，**不依赖 flutter**。
 ///
-/// 颜色取自固定调色板，用自定义哈希（djb2 变体）取模，
+/// 颜色取自调色板，用自定义哈希（djb2 变体）取模，
 /// 保证同一课程名在任何设备、任何次运行都得到同一颜色。
+///
+/// J6 起调色板可**运行时替换**（主题包的 coursePalette）：
+/// 模块级 [_activePalette] 变量 + [setActiveCoursePalette]，
+/// main() 启动时按主题包设置。仍然无 IO、无状态管理库——
+/// 取色逻辑本身是纯函数（同输入同输出，结果取决于当前调色板），
+/// 只有模块级的「当前调色板」一个可变量。
 library;
 
-/// 课表配色板（ARGB int）。
+/// 默认课表配色板（ARGB int），16 色。
 ///
 /// 设计原则（相对旧版 Material 400 高饱和亮色的改进）：
 ///   1. **降饱和、微压暗** —— 去掉糖果感，与 App 整体（午夜蓝图标、
@@ -20,7 +26,7 @@ library;
 ///
 /// ⚠️ 改动本表后，已保存的课表里旧的 colorValue 需要迁移：
 /// `StorageService.load` 会把「不在本表内」的 colorValue 按课名重新取值。
-const List<int> coursePalette = <int>[
+const List<int> defaultCoursePalette = <int>[
   0xFFC05B5B, // 0  绯红   白字 4.30:1
   0xFFB8528C, // 1  玫粉   白字 4.54:1
   0xFF8E55A8, // 2  紫     白字 5.23:1
@@ -39,16 +45,51 @@ const List<int> coursePalette = <int>[
   0xFF857B2E, // 15 芥黄   白字 4.31:1
 ];
 
+/// 当前生效的调色板；默认 = [defaultCoursePalette]。
+List<int> _activePalette = defaultCoursePalette;
+
+/// 当前生效的课程调色板。
+List<int> get activeCoursePalette => _activePalette;
+
+/// 是否在用默认调色板（用于判断要不要重新取色）。
+bool get usingDefaultPalette {
+  if (_activePalette.length != defaultCoursePalette.length) {
+    return false;
+  }
+  for (int i = 0; i < _activePalette.length; i++) {
+    if (_activePalette[i] != defaultCoursePalette[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/// 替换当前调色板（主题包 coursePalette）。
+///
+/// - null → 恢复默认；
+/// - 空列表 → 忽略，保持原调色板（防御：不产生空调色板的半成品状态）；
+/// - 正常列表 → 拷贝为不可变列表（防止调用方后续修改泄漏进来）。
+void setActiveCoursePalette(List<int>? palette) {
+  if (palette == null) {
+    _activePalette = defaultCoursePalette;
+    return;
+  }
+  if (palette.isEmpty) {
+    return;
+  }
+  _activePalette = List<int>.unmodifiable(palette);
+}
+
 /// 依据课程名取色。空字符串返回调色板首色，保证不抛异常。
 int colorValueFromName(String name) {
   if (name.isEmpty) {
-    return coursePalette.first;
+    return _activePalette.first;
   }
   int hash = 5381;
   for (final int unit in name.codeUnits) {
     hash = (hash * 33 + unit) & 0x7FFFFFFF;
   }
-  return coursePalette[hash % coursePalette.length];
+  return _activePalette[hash % _activePalette.length];
 }
 
 /// 该 colorValue 是否是当前调色板中的颜色。
@@ -56,5 +97,5 @@ int colorValueFromName(String name) {
 /// 用于判断旧数据里的颜色是否已经过时：调色板更新后，旧 colorValue
 /// 不在表内，应回退到按课名重新取色。
 bool isPaletteColor(int colorValue) {
-  return coursePalette.contains(colorValue & 0xFFFFFFFF);
+  return _activePalette.contains(colorValue & 0xFFFFFFFF);
 }
