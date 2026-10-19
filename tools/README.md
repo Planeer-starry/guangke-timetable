@@ -20,7 +20,8 @@
 |---|---|
 | `console_snippet.js` | **推荐**。粘到浏览器控制台就能跑，不用装 Python、不用复制 Cookie |
 | `crawl.py` | Python 版，纯标准库。适合脚本化 |
-| `selftest.py` | `crawl.py` 的纯逻辑自测（不联网） |
+| `selftest.py` | `crawl.py` 的纯逻辑自测（不联网，62 项断言） |
+| `TUTORIAL.md` | **分步使用教程**（先在 DevTools 里找请求，再跑脚本） |
 
 ⚠️ **没有在真实教务系统上验证过**——接口细节只有你自己能确认。
 详细操作步骤见 [`gdust_crawl/README.md`](gdust_crawl/README.md)。
