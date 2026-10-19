@@ -62,8 +62,14 @@ class PaletteService {
   /// 选中配色并持久化；**立即应用到课程取色**。
   Future<void> select(PalettePack pack) async {
     await _prefs.setString(_keyActiveId, pack.id);
-    active.value = pack;
+    // ⚠️ 顺序要紧：**先切调色板，再更新 notifier**。
+    // 监听方（设置页 _onPaletteChanged → _reapplyCourseColors）在收到通知的
+    // 那一刻就同步用 colorValueFromName 重取色，那时 _activePalette 必须
+    // 已经是新调色板。反过来写会让重取色仍按旧调色板计算，界面表现为
+    // 「选中了但课块没变」（真机实测踩过：service 单测在 select 整体完成后
+    // 才断言 activeCoursePalette，看不出这个顺序问题）。
     setActiveCoursePalette(pack.colors);
+    active.value = pack;
   }
 
   /// 从 JSON 文本导入配色包（对象或裸颜色数组），**成功即选中（立刻生效）**。
@@ -151,12 +157,13 @@ class PaletteService {
     if (colors == null) {
       return;
     }
+    // 同 select：先切调色板再通知（监听方会同步重取色）
+    setActiveCoursePalette(colors);
     active.value = PalettePack(
       id: 'theme:${theme.id}',
       name: theme.name,
       colors: colors,
     );
-    setActiveCoursePalette(colors);
   }
 
   Future<void> _persistImported(List<PalettePack> packs) async {

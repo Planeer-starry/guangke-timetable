@@ -11,6 +11,7 @@ import 'package:timetable/screens/import_flow.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/screens/settings_screen.dart';
 import 'package:timetable/services/course_editor.dart';
+import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/theme_service.dart';
@@ -39,6 +40,7 @@ class HomeScreen extends StatefulWidget {
     required this.storage,
     required this.settings,
     required this.themeService,
+    required this.paletteService,
   });
 
   final TimetableData initialData;
@@ -47,6 +49,9 @@ class HomeScreen extends StatefulWidget {
 
   /// 主题包服务（J6）：透传给设置页（主题包入口 / 重新取色）。
   final ThemeService themeService;
+
+  /// 课程配色服务（J7）：透传给设置页（配色入口 / 重新取色）。
+  final PaletteService paletteService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -163,6 +168,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           storage: widget.storage,
           settings: widget.settings,
           themeService: widget.themeService,
+          paletteService: widget.paletteService,
           undoStack: _undoStack,
           initialUpdate: _updateInfo.value,
         ),

@@ -9,8 +9,8 @@ import 'package:timetable/screens/home_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/theme_service.dart';
+import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/widget_service.dart';
-import 'package:timetable/utils/course_color.dart';
 
 /// 应用入口。
 ///
@@ -21,13 +21,16 @@ Future<void> main() async {
   final StorageService storage = await StorageService.forApp();
   final SettingsService settings = await SettingsService.forApp();
   // SharedPreferences 是单例，这里拿到的是与 SettingsService 同一个实例
-  final ThemeService themeService = ThemeService(
-    await SharedPreferences.getInstance(),
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  final ThemeService themeService = ThemeService(prefs);
+  // J7：调色板的**唯一真相**是 PaletteService。构造内 _restore 会
+  // setActiveCoursePalette(active.colors)（含 1.3.0 主题包迁移），
+  // **必须在 storage.load() 之前**——load 内部的 _migratePalette
+  // 按当前调色板判断旧 colorValue 是否过时（J6 验证过的时序）。
+  final PaletteService paletteService = PaletteService(
+    prefs,
+    themeForMigration: themeService.active.value,
   );
-  // ⚠️ 必须在 storage.load() **之前**：load 内部的配色迁移
-  // （_migratePalette）按「当前调色板」判断旧 colorValue 是否过时并按
-  // 课名重取——先设好主题包调色板，重启后旧课表才会迁移到主题包配色。
-  setActiveCoursePalette(themeService.active.value.coursePalette);
   WidgetService.setAccent(themeService.active.value);
   final TimetableData data = await storage.load();
   // 启动即同步一次小组件数据（精确闹钟可用性只提示，不阻塞启动）
@@ -38,6 +41,7 @@ Future<void> main() async {
       storage: storage,
       settings: settings,
       themeService: themeService,
+      paletteService: paletteService,
     ),
   );
 }
@@ -52,12 +56,16 @@ class TimetableApp extends StatefulWidget {
     required this.storage,
     required this.settings,
     required this.themeService,
+    required this.paletteService,
   });
 
   final TimetableData initialData;
   final StorageService storage;
   final SettingsService settings;
   final ThemeService themeService;
+
+  /// 课程配色服务（J7）：透传给 HomeScreen → SettingsScreen。
+  final PaletteService paletteService;
 
   @override
   State<TimetableApp> createState() => _TimetableAppState();
@@ -91,7 +99,7 @@ class _TimetableAppState extends State<TimetableApp> {
 
   /// 主题包切换：重建整套 ColorScheme（MaterialApp 级）。
   ///
-  /// 小组件强调色与课程重取色由设置页的监听统一处理
+  /// 小组件强调色 / 课程配色注入由设置页的监听统一处理
   /// （它持有 data notifier 与 refreshAll 入口）。
   void _onThemePackChanged() {
     setState(() {
@@ -121,6 +129,7 @@ class _TimetableAppState extends State<TimetableApp> {
         storage: widget.storage,
         settings: widget.settings,
         themeService: widget.themeService,
+        paletteService: widget.paletteService,
       ),
     );
   }

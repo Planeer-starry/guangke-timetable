@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/screens/settings_screen.dart';
+import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/theme_service.dart';
@@ -46,6 +47,8 @@ Future<void> pumpSettings(WidgetTester tester) async {
   final SettingsService settings = SettingsService(prefs);
   // J6：SettingsScreen 新增 required themeService（主题包入口用）
   final ThemeService themeService = ThemeService(prefs);
+  // J7：SettingsScreen 新增 required paletteService（课程配色入口用）
+  final PaletteService paletteService = PaletteService(prefs);
   // ⚠️ testWidgets 跑在 fake async zone 里：真实文件 I/O 的 Future 永远不会完成，
   // 必须用 tester.runAsync 包起来，否则整条测试会静默挂死（同 home_swipe_week_test，
   // 这个坑已经踩过一次，见那里的注释）。
@@ -60,6 +63,7 @@ Future<void> pumpSettings(WidgetTester tester) async {
         storage: storage,
         settings: settings,
         themeService: themeService,
+        paletteService: paletteService,
         undoStack: UndoStack(),
         initialUpdate: null,
       ),

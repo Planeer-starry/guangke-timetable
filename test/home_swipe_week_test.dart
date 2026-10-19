@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/screens/home_screen.dart';
+import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/theme_service.dart';
@@ -65,6 +66,8 @@ Future<void> pumpHome(WidgetTester tester, TimetableData data) async {
   final SettingsService settings = SettingsService(prefs);
   // J6：HomeScreen 新增 required themeService（透传给设置页）
   final ThemeService themeService = ThemeService(prefs);
+  // J7：HomeScreen 新增 required paletteService（透传给设置页）
+  final PaletteService paletteService = PaletteService(prefs);
   // ⚠️ testWidgets 跑在 fake async zone 里：真实文件 I/O 的 Future 永远不会完成，
   // 必须用 tester.runAsync 包起来，否则整条测试会静默挂死（踩过）。
   final Directory tmp = (await tester.runAsync(
@@ -74,11 +77,12 @@ Future<void> pumpHome(WidgetTester tester, TimetableData data) async {
   await tester.pumpWidget(
     MaterialApp(
       home: HomeScreen(
-          initialData: data,
-          storage: storage,
-          settings: settings,
-          themeService: themeService,
-        ),
+        initialData: data,
+        storage: storage,
+        settings: settings,
+        themeService: themeService,
+        paletteService: paletteService,
+      ),
     ),
   );
   await _settle(tester);

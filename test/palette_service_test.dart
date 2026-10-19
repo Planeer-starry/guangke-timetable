@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -390,6 +392,68 @@ void main() {
       // 用户的显式选择被持久化，重启不再被主题包配色覆盖
       final PaletteService restored = PaletteService(prefs);
       expect(restored.active.value.id, 'autumn');
+    });
+  });
+
+  // ── 回归：通知监听器时的调色板状态 ─────────────────────────
+  //
+  // 真机踩过的 bug：select() 里先 `active.value = pack` 再
+  // `setActiveCoursePalette(pack.colors)`，导致设置页的监听器
+  // （_onPaletteChanged → _reapplyCourseColors）在收到通知的那一刻
+  // 用 **旧调色板** 重取色，界面表现为「选中了但课块没变」。
+  //
+  // service 单测原先只在 select() 整体完成后断言 activeCoursePalette，
+  // 看不出这个顺序问题 —— 必须从「监听器视角」断言。
+  group('通知监听器时调色板必须已切换（顺序回归）', () {
+    test('select -> 监听器触发时 activeCoursePalette 已是新配色', () async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final PaletteService service = PaletteService(prefs);
+      final PalettePack custom = PalettePack.fromJson(
+        jsonDecode(_custom8Json),
+      )!;
+
+      List<int>? paletteAtNotify;
+      void listener() {
+        // 监听方在这一刻会同步重取色 —— 此刻必须已是新调色板
+        paletteAtNotify = List<int>.of(activeCoursePalette);
+      }
+
+      service.active.addListener(listener);
+      await service.select(custom);
+      service.active.removeListener(listener);
+
+      expect(paletteAtNotify, isNotNull, reason: '监听器没被触发');
+      expect(
+        paletteAtNotify,
+        custom.colors,
+        reason: '通知监听器时调色板还是旧的 → 重取色会算出旧颜色',
+      );
+    });
+
+    test('applyFromTheme -> 监听器触发时 activeCoursePalette 已是主题配色',
+        () async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final PaletteService service = PaletteService(prefs);
+      final List<int> themeColors = <int>[
+        for (int i = 0; i < 8; i++) 0xFF202020 + i * 0x010101,
+      ];
+      final ThemePack theme = ThemePack(
+        id: 't1',
+        name: '测试主题',
+        seedColor: 0xFF123456,
+        coursePalette: themeColors,
+      );
+
+      List<int>? paletteAtNotify;
+      void listener() {
+        paletteAtNotify = List<int>.of(activeCoursePalette);
+      }
+
+      service.active.addListener(listener);
+      await service.applyFromTheme(theme);
+      service.active.removeListener(listener);
+
+      expect(paletteAtNotify, themeColors);
     });
   });
 }

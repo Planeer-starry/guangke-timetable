@@ -6,12 +6,14 @@ import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:timetable/constants/app_config.dart';
 import 'package:timetable/models/course.dart';
+import 'package:timetable/models/palette_pack.dart';
 import 'package:timetable/models/theme_pack.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/import_flow.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
+import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/theme_service.dart';
@@ -20,6 +22,7 @@ import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/course_color.dart';
 import 'package:timetable/widgets/app_card.dart';
+import 'package:timetable/widgets/palette_pack_sheet.dart';
 import 'package:timetable/widgets/theme_pack_sheet.dart';
 import 'package:timetable/widgets/update_section.dart';
 
@@ -31,6 +34,7 @@ class SettingsScreen extends StatefulWidget {
     required this.storage,
     required this.settings,
     required this.themeService,
+    required this.paletteService,
     required this.undoStack,
     required this.initialUpdate,
   });
@@ -41,6 +45,9 @@ class SettingsScreen extends StatefulWidget {
 
   /// 主题包服务（J6）：active 驱动界面种子色，coursePalette 驱动课程取色。
   final ThemeService themeService;
+
+  /// 课程配色服务（J7）：调色板唯一真相，active 驱动课程取色。
+  final PaletteService paletteService;
 
   /// 首页持有的撤销栈。
   ///
@@ -73,8 +80,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _lastThemePack = widget.themeService.active.value;
     widget.themeService.active.addListener(_onThemePackChanged);
+    widget.paletteService.active.addListener(_onPaletteChanged);
     _loadPackageInfo();
     _checkImportedSnapshot();
   }
@@ -82,29 +89,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void dispose() {
     widget.themeService.active.removeListener(_onThemePackChanged);
+    widget.paletteService.active.removeListener(_onPaletteChanged);
     super.dispose();
   }
 
-  /// 上一次见到的主题包（判断课程调色板是否变化）。
-  ThemePack _lastThemePack = ThemePack.fallback;
-
   /// 主题包变化（面板点选 / 导入 / 删除回退都会走到）：
-  /// - 任何变化：同步小组件强调色并刷新小组件；
-  /// - 课程调色板变化：按新调色板重取所有课程颜色（压撤销栈）。
+  /// - 同步小组件强调色；
+  /// - 带课程配色：经 [PaletteService.applyFromTheme] 注入临时包，
+  ///   重取色由 [_onPaletteChanged] 对 active 的监听统一处理；
+  /// - 不带课程配色：完全不碰调色板（J7「配色与主题包解绑」语义），
+  ///   只让小组件高亮跟上。
   void _onThemePackChanged() {
     final ThemePack pack = widget.themeService.active.value;
-    final bool paletteChanged = !_samePalette(
-      _lastThemePack.coursePalette,
-      pack.coursePalette,
-    );
-    _lastThemePack = pack;
     WidgetService.setAccent(pack);
-    if (paletteChanged) {
-      _reapplyCourseColors();
-    } else {
-      // 只换种子色（课程配色没变）也要让小组件高亮跟上
-      WidgetService.refreshAll(widget.data.value);
+    if (pack.coursePalette != null) {
+      widget.paletteService.applyFromTheme(pack);
+      return;
     }
+    WidgetService.refreshAll(widget.data.value);
+  }
+
+  /// 课程配色变化（面板点选 / 导入即选 / 删除回退 / 主题包注入临时包）：
+  /// 按新调色板重取所有课程颜色（[_reapplyCourseColors]）。
+  void _onPaletteChanged() {
+    _reapplyCourseColors();
   }
 
   /// 从 .json 文件导入主题包；选中与重新取色由 [_onThemePackChanged]
@@ -144,18 +152,55 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  /// 课程调色板变化后的全量重取色（J6）：每门课按当前调色板重算
-  /// colorValue，保存 + 更新内存 + 刷新小组件。
+  /// 从 .json 文件导入课程配色包；importFromJson 成功即选中，
+  /// 重取色由 [_onPaletteChanged] 对 paletteService.active 的监听
+  /// 统一处理，这里只负责读文件与结果反馈。
+  Future<void> _importPalettePack() async {
+    final List<PlatformFile> picked = await FilePicker.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: <String>['json'],
+    );
+    if (picked.isEmpty || !mounted) {
+      return;
+    }
+    final String text;
+    try {
+      text = utf8.decode(await picked.single.readAsBytes());
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('读取文件失败：$error')));
+      return;
+    }
+    final PaletteImportOutcome outcome = await widget.paletteService
+        .importFromJson(text);
+    if (!mounted) {
+      return;
+    }
+    if (!outcome.ok) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(outcome.error!)));
+      return;
+    }
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('已导入配色「${outcome.pack!.name}」')));
+  }
+
+  /// 课程调色板变化后的全量重取色（J7）：每门课按当前调色板重算
+  /// colorValue，保存 + 更新内存 + 刷新小组件。调色板的应用
+  /// （setActiveCoursePalette）已由 PaletteService 的 select /
+  /// applyFromTheme 内部完成，这里不再重复调用。
   ///
   /// ⚠️ **不压撤销栈**。撤销栈只存「课表数据快照」，不存当前调色板；
   /// 若把换配色前的数据压进去，用户撤销后课块会短暂恢复旧色，但
-  /// `course_color` 的 activePalette 仍是新主题包的调色板 —— 下次启动
+  /// `course_color` 的 activePalette 仍是新配色 —— 下次启动
   /// `StorageService.load()` → `_migratePalette` 发现颜色不在当前调色板里，
   /// 又会按课名重取色，撤销被静默吞掉（实测确认过这个时序）。
   ///
-  /// 主题包本身的撤销手段就是主题包选择器：切回原主题即恢复原配色。
+  /// 换配色本身的撤销手段就是配色选择器：切回原配色即恢复原色。
   Future<void> _reapplyCourseColors() async {
-    setActiveCoursePalette(widget.themeService.active.value.coursePalette);
     final TimetableData current = widget.data.value;
     final TimetableData updated = current.copyWith(
       courses: <Course>[
@@ -176,22 +221,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     widget.data.value = updated;
     // ⚠️ 不能漏：小组件的课程色块颜色由这次刷新同步
     WidgetService.refreshAll(updated);
-  }
-
-  /// 两个可选调色板是否逐元素相同（含 null 情形）。
-  static bool _samePalette(List<int>? a, List<int>? b) {
-    if (identical(a, b)) {
-      return true;
-    }
-    if (a == null || b == null || a.length != b.length) {
-      return false;
-    }
-    for (int i = 0; i < a.length; i++) {
-      if (a[i] != b[i]) {
-        return false;
-      }
-    }
-    return true;
   }
 
   Future<void> _checkImportedSnapshot() async {
@@ -527,6 +556,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context,
               service: widget.themeService,
               onImport: _importThemePack,
+            ),
+          ),
+        ),
+        ValueListenableBuilder<PalettePack>(
+          valueListenable: widget.paletteService.active,
+          builder: (BuildContext context, PalettePack palette, _) => ListTile(
+            leading: const Icon(Icons.color_lens_outlined),
+            title: const Text('课程配色'),
+            // theme: 前缀 = 主题包注入的临时包，用户没单独选过配色
+            subtitle: Text(
+              palette.id.startsWith('theme:') ? '来自主题包' : palette.name,
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => PalettePackSheet.show(
+              context,
+              service: widget.paletteService,
+              onImport: _importPalettePack,
             ),
           ),
         ),
