@@ -13,6 +13,7 @@ import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/import_flow.dart';
 
+import 'package:timetable/screens/period_settings_screen.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
@@ -22,6 +23,7 @@ import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/course_color.dart';
+import 'package:timetable/utils/period_editor.dart';
 import 'package:timetable/widgets/app_card.dart';
 import 'package:timetable/widgets/palette_pack_sheet.dart';
 import 'package:timetable/widgets/theme_pack_sheet.dart';
@@ -278,6 +280,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     WidgetService.refreshAll(updated);
   }
 
+  /// 跳作息设置页（J10）：页面内部直接写回 data（含落盘 / 撤销 / 小组件）。
+  Future<void> _openPeriodSettings() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => PeriodSettingsScreen(
+          data: widget.data,
+          storage: widget.storage,
+          undoStack: widget.undoStack,
+        ),
+      ),
+    );
+  }
+
   /// 外观：底部弹窗三选一（跟随系统 / 浅色 / 深色）。
   Future<void> _pickThemeMode(BuildContext context, String current) async {
     final String? picked = await showModalBottomSheet<String>(
@@ -529,6 +544,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: Text(_semesterSubtitle(data.meta)),
             trailing: const Icon(Icons.chevron_right),
             onTap: _openSemesterSetup,
+          ),
+        ),
+        // 作息时间（J10）：每节起止 / 节数可编辑，摘要随 data 变化
+        ValueListenableBuilder<TimetableData>(
+          valueListenable: widget.data,
+          builder: (BuildContext context, TimetableData data, _) => ListTile(
+            leading: const Icon(Icons.schedule),
+            title: const Text('作息时间'),
+            subtitle: Text(periodsSummary(data.periods)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _openPeriodSettings,
           ),
         ),
       ],
