@@ -69,7 +69,7 @@
 
 ```
 release\guangke-timetable-<版本号>.apk
-（例如 release\guangke-timetable-1.1.0+2.apk）
+（例如 release\guangke-timetable-1.2.0+3.apk）
 ```
 
 把这个文件通过微信 / QQ / 网盘发给同学即可。
