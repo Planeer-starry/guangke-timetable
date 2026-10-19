@@ -31,6 +31,8 @@
   const LOCATION_KEYS = ['cdmc', 'classroomName', 'classroom', 'room', 'jxdd', 'location', 'jsmc'];
   const DAY_KEYS = ['xqj', 'dayWeek', 'day_of_week', 'day', 'dayOfWeek', 'week_day'];
   const SECTION_KEYS = ['jcs', 'whichSection', 'section', 'jcor', 'sections', 'jc'];
+  const WEEK_KEYS = ['zcd', 'weekText', 'weeks', 'zc', 'week_str', 'week'];
+  const SINGLE_DOUBLE_KEYS = ['singleOrDoubleWeek', 'singleOrDouble', 'single_or_double_week', 'weekType'];
 
   // ─────────── 工具函数 ───────────
   const text = (v) => (v === null || v === undefined ? '' : String(v).trim());
@@ -63,22 +65,61 @@
       if (xs.length === 0) return '';
       return `${Math.min(...xs)}-${Math.max(...xs)}`;
     };
+    if (Array.isArray(raw)) return span(raw.map(toInt).filter(Boolean));
 
-    if (Array.isArray(raw)) {
-      return span(raw.map(toInt).filter(Boolean));
-    }
     const s = text(raw);
     if (!s) return '';
-
-    // 紧凑编码 0102 → 1,2
     if (/^(?:\d{2})+$/.test(s)) {
       const nums = [];
       for (let i = 0; i < s.length; i += 2) nums.push(parseInt(s.slice(i, i + 2), 10));
       return span(nums);
     }
-    const cleaned = s.replace(/节|第/g, '');
-    const nums = (cleaned.match(/\d+/g) || []).map((n) => parseInt(n, 10));
+    const nums = (s.replace(/节|第/g, '').match(/\d+/g) || []).map((n) => parseInt(n, 10));
     return span(nums);
+  };
+
+  /** 条目自带的周次 → Set。支持 5 / "1-16" / "1-16周" / "8,10,12" / [1,2] */
+  const parseEntryWeeks = (raw) => {
+    const out = new Set();
+    if (raw === null || raw === undefined) return out;
+    if (Array.isArray(raw)) {
+      raw.forEach((item) => parseEntryWeeks(item).forEach((w) => out.add(w)));
+      return out;
+    }
+    if (typeof raw === 'number') {
+      if (raw > 0) out.add(Math.trunc(raw));
+      return out;
+    }
+    const s = text(raw).replace(/[周第（）()\[\]]/g, ' ');
+    if (!s) return out;
+    s.split(/[,，、;；\s]+/).forEach((part) => {
+      if (!part) return;
+      const rng = part.match(/^(\d+)\s*[-–~—到至]\s*(\d+)$/);
+      if (rng) {
+        const a = parseInt(rng[1], 10);
+        const b = parseInt(rng[2], 10);
+        for (let w = Math.min(a, b); w <= Math.max(a, b); w += 1) if (w > 0) out.add(w);
+      } else if (/^\d+$/.test(part)) {
+        const w = parseInt(part, 10);
+        if (w > 0) out.add(w);
+      }
+    });
+    return out;
+  };
+
+  /** 按 singleOrDoubleWeek 过滤单双周 */
+  const applySingleDouble = (weeks, raw) => {
+    const s = text(raw);
+    if (!s) return weeks;
+    const keepOdd = s.includes('单') || s === '1';
+    const keepEven = s.includes('双') || s === '2';
+    if (!keepOdd && !keepEven) return weeks;
+    const out = new Set();
+    weeks.forEach((w) => {
+      if (keepOdd && w % 2 === 1) out.add(w);
+      if (keepEven && w % 2 === 0) out.add(w);
+    });
+    return out;
   };
 
   /** 递归收集「同时有课程名和星期」的对象 */
@@ -99,10 +140,48 @@
         classroomName: text(firstValue(node, LOCATION_KEYS)),
         dayWeek: day,
         whichSection: normalizeSections(firstValue(node, SECTION_KEYS)),
+        _weeks: parseEntryWeeks(firstValue(node, WEEK_KEYS)),
+        _singleDouble: text(firstValue(node, SINGLE_DOUBLE_KEYS)),
       });
       return;
     }
     Object.values(node).forEach((v) => collect(v, out, depth + 1));
+  };
+
+  /** 两阶段聚合：按条目自带周次归组，无则用抓取时的周次；全量去重 */
+  const aggregate = (collected) => {
+    const buckets = {};
+    const seen = new Set();
+    collected.forEach(({ loopWeek, entry }) => {
+      let weeks = entry._weeks && entry._weeks.size > 0
+        ? entry._weeks
+        : new Set([loopWeek]);
+      weeks = applySingleDouble(weeks, entry._singleDouble);
+      const clean = {
+        courseName: entry.courseName,
+        teacher: entry.teacher,
+        classroomName: entry.classroomName,
+        dayWeek: entry.dayWeek,
+        whichSection: entry.whichSection,
+      };
+      [...weeks].sort((a, b) => a - b).forEach((w) => {
+        const key = [w, clean.courseName, clean.teacher, clean.classroomName,
+          clean.dayWeek, clean.whichSection].join('|');
+        if (seen.has(key)) return;
+        seen.add(key);
+        (buckets[String(w)] = buckets[String(w)] || []).push(clean);
+      });
+    });
+    const sectionKey = (s) => {
+      const m = (s || '').match(/\d+/);
+      return m ? parseInt(m[0], 10) : 999;
+    };
+    Object.keys(buckets).forEach((w) => {
+      buckets[w].sort((a, b) =>
+        a.dayWeek !== b.dayWeek ? a.dayWeek - b.dayWeek
+          : sectionKey(a.whichSection) - sectionKey(b.whichSection));
+    });
+    return buckets;
   };
 
   /** 在查询串里找周次参数 */
@@ -162,14 +241,16 @@
       weeks.push(parseInt(p, 10));
     }
   });
-  const weekList = [...new Set(weeks.filter((w) => Number.isFinite(w) && w > 0))].sort((a, b) => a - b);
+  const weekList = [...new Set(weeks.filter((w) => Number.isFinite(w) && w > 0))]
+    .sort((a, b) => a - b);
 
   console.log(`[*] 周次参数: ${weekParam}`);
   console.log(`[*] 抓取 ${weekList[0]}..${weekList[weekList.length - 1]}，共 ${weekList.length} 周`);
 
   // ─────────── 抓取 ───────────
-  const result = {};
+  const collected = [];
   let failure = 0;
+  let wholeSemester = false;
 
   for (const week of weekList) {
     const target = replaceParam(url, weekParam, week);
@@ -201,23 +282,23 @@
     const entries = [];
     collect(payload, entries);
 
-    // 同周去重
-    const seen = new Set();
-    const unique = [];
-    for (const entry of entries) {
-      const key = [entry.courseName, entry.teacher, entry.classroomName,
-        entry.dayWeek, entry.whichSection].join('|');
-      if (!seen.has(key)) {
-        seen.add(key);
-        unique.push(entry);
+    if (entries.length === 0) {
+      console.log(`[·] 第 ${week} 周：无课程`);
+    } else {
+      entries.forEach((entry) => collected.push({ loopWeek: week, entry }));
+      const withWeek = entries.filter((e) => e._weeks && e._weeks.size > 0).length;
+      console.log(`[✓] 第 ${week} 周：${entries.length} 条`
+        + (withWeek ? `（${withWeek} 条自带周次）` : ''));
+      if (withWeek > 0 && !wholeSemester) {
+        wholeSemester = true;
+        console.log('    ↳ 条目自带 week 字段 → 判定为「一次返回整学期」，不再逐周抓取');
+        break;
       }
     }
-    result[String(week)] = unique;
-    console.log(`[✓] 第 ${week} 周：${unique.length} 条`);
-
     await new Promise((r) => setTimeout(r, 500));
   }
 
+  const result = aggregate(collected);
   const total = Object.values(result).reduce((sum, list) => sum + list.length, 0);
   if (total === 0) {
     console.error('❌ 所有周都没有抓到课程。');
@@ -235,14 +316,13 @@
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
 
+  const weekKeys = Object.keys(result).sort((x, y) => parseInt(x, 10) - parseInt(y, 10));
   console.log('─'.repeat(48));
-  console.log(`✅ 已下载 timetable.json`);
-  console.log(`   周数 ${Object.keys(result).length}，条目 ${total}`);
-  if (failure > 0) console.warn(`   ⚠️ ${failure} 周失败`);
+  console.log('✅ 已下载 timetable.json');
+  console.log(`   周数 ${weekKeys.length}（${weekKeys[0]}..${weekKeys[weekKeys.length - 1]}），条目 ${total}`);
+  if (failure > 0) console.warn(`   ⚠️ ${failure} 周请求失败`);
   console.log('');
   console.log('下一步：传到手机 → App → 设置 → 导入课表 → 从文件导入（.json）');
   console.log('        ⚠️ 导入后需手动设置「第一周周一」');
-  console.table(
-    Object.entries(result).map(([w, list]) => ({ 周: w, 条数: list.length }))
-  );
+  console.table(weekKeys.map((w) => ({ 周: w, 条数: result[w].length })));
 })();

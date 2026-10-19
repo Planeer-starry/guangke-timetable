@@ -11,9 +11,12 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from crawl import (  # noqa: E402
+    aggregate,
+    apply_single_double,
     collect_courses,
     detect_week_param,
     normalize_sections,
+    parse_entry_weeks,
     parse_weeks,
     replace_query_param,
 )
@@ -136,6 +139,69 @@ check('1-8,10-16', parse_weeks('1-8,10-16'),
       list(range(1, 9)) + list(range(10, 17)))
 check('单值 5', parse_weeks('5'), [5])
 check('乱序去重', parse_weeks('3,1,3,2'), [1, 2, 3])
+
+print()
+print('=== 8. parse_entry_weeks（条目自带的周次字段）===')
+check('数字 5', parse_entry_weeks(5), {5})
+check('范围 1-16', parse_entry_weeks('1-16'), set(range(1, 17)))
+check('带周字 1-16周', parse_entry_weeks('1-16周'), set(range(1, 17)))
+check('列表 8,10,12', parse_entry_weeks('8,10,12'), {8, 10, 12})
+check('数组 [1,2,3]', parse_entry_weeks([1, 2, 3]), {1, 2, 3})
+check('None', parse_entry_weeks(None), set())
+check('空串', parse_entry_weeks(''), set())
+
+print()
+print('=== 9. apply_single_double（单双周过滤）===')
+check('双周', apply_single_double({1, 2, 3, 4}, '双'), {2, 4})
+check('单周', apply_single_double({1, 2, 3, 4}, '单'), {1, 3})
+check('编码 2=双周', apply_single_double({1, 2, 3, 4}, '2'), {2, 4})
+check('无标记原样', apply_single_double({1, 2, 3}, None), {1, 2, 3})
+
+print()
+print('=== 10. collect_courses 捕获周次与单双周字段 ===')
+zf = {'data': {'courseList': [
+    {'courseName': '大学英语Ⅰ', 'teacherName': '刘璐璐', 'classroomName': '松4-405',
+     'dayWeek': 2, 'whichSection': 1, 'week': '1-16', 'singleOrDoubleWeek': '双'},
+]}}
+out_zf = []
+collect_courses(zf, out_zf)
+check('数量', len(out_zf), 1)
+check('_weeks', out_zf[0]['_weeks'], set(range(1, 17)))
+check('_singleDouble', out_zf[0]['_singleDouble'], '双')
+check('whichSection 数字 -> 区间串', out_zf[0]['whichSection'], '1-1')
+
+print()
+print('=== 11. aggregate：一次返回整学期（多次抓取不重复）===')
+one = {'courseName': '高等数学BⅠ', 'teacher': '谌凤霞', 'classroomName': '松5-307',
+       'dayWeek': 3, 'whichSection': '5-5', '_weeks': {7, 8}, '_singleDouble': ''}
+agg = aggregate([(7, one), (8, one), (9, one)])
+check('周键', sorted(agg.keys(), key=int), ['7', '8'])
+check('每周条数', [len(v) for v in agg.values()], [1, 1])
+
+print()
+print('=== 12. aggregate：按周返回（条目无周次字段，用兜底周）===')
+no_week = {'courseName': 'C语言程序设计C', 'teacher': '苏华江',
+           'classroomName': '松L3-905', 'dayWeek': 4, 'whichSection': '7-7',
+           '_weeks': set(), '_singleDouble': ''}
+agg2 = aggregate([(7, no_week), (8, no_week)])
+check('周键', sorted(agg2.keys(), key=int), ['7', '8'])
+check('每周条数', [len(v) for v in agg2.values()], [1, 1])
+
+print()
+print('=== 13. aggregate：单双周过滤 ===')
+sd = {'courseName': '大学英语Ⅰ', 'teacher': '刘璐璐', 'classroomName': '松4-405',
+      'dayWeek': 2, 'whichSection': '1-1', '_weeks': {1, 2, 3, 4}, '_singleDouble': '双'}
+agg3 = aggregate([(1, sd)])
+check('双周只留偶数周', sorted(agg3.keys(), key=int), ['2', '4'])
+
+print()
+print('=== 14. aggregate：同周内按星期+节次排序 ===')
+a = {'courseName': 'A', 'teacher': '', 'classroomName': '', 'dayWeek': 5,
+     'whichSection': '1-1', '_weeks': {1}, '_singleDouble': ''}
+b = {'courseName': 'B', 'teacher': '', 'classroomName': '', 'dayWeek': 1,
+     'whichSection': '3-3', '_weeks': {1}, '_singleDouble': ''}
+agg4 = aggregate([(1, a), (1, b)])
+check('排序（周一在前）', [e['courseName'] for e in agg4['1']], ['B', 'A'])
 
 print()
 if failures:

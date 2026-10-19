@@ -79,10 +79,83 @@ TEACHER_KEYS = ['xm', 'teacher', 'teacherName', 'teacher_name', 'jsxm']
 LOCATION_KEYS = ['cdmc', 'classroomName', 'classroom', 'room', 'jxdd', 'location', 'jsmc']
 DAY_KEYS = ['xqj', 'dayWeek', 'day_of_week', 'day', 'dayOfWeek', 'week_day']
 SECTION_KEYS = ['jcs', 'whichSection', 'section', 'jcor', 'sections', 'jc']
-WEEK_TEXT_KEYS = ['zcd', 'weekText', 'weeks', 'zc', 'week_str']
+WEEK_TEXT_KEYS = ['zcd', 'weekText', 'weeks', 'zc', 'week_str', 'week']
+# 单双周标记（广科门户接口的 singleOrDoubleWeek，以及常见变体）
+SINGLE_DOUBLE_KEYS = [
+    'singleOrDoubleWeek',
+    'singleOrDouble',
+    'single_or_double_week',
+    'weekType',
+]
 
 # 形如 0102 / 0304 的紧凑节次编码（正方常见）：每两位一节
 _COMPACT_SECTION = re.compile(r'^(?:\d{2})+$')
+
+
+def parse_entry_weeks(raw) -> set[int]:
+    """把条目里的「周次」字段解析成周次集合。
+
+    广科门户的 courseList 条目自带 `week` 字段，可能是：
+      数字 5                → {5}
+      字符串 "1-16" / "1-16周" → {1..16}
+      字符串 "8,10,12"        → {8,10,12}
+      数组 [1,2,3]           → {1,2,3}
+    解析不出时返回空集合（调用方退回用抓取时的周次）。
+    """
+    if raw is None:
+        return set()
+
+    if isinstance(raw, (list, tuple)):
+        weeks: set[int] = set()
+        for item in raw:
+            weeks |= parse_entry_weeks(item)
+        return weeks
+
+    if isinstance(raw, int) and not isinstance(raw, bool):
+        return {raw} if raw > 0 else set()
+
+    text = _text(raw)
+    if not text:
+        return set()
+
+    # 去掉「周」「第」与括号，只留数字和分隔符
+    cleaned = re.sub(r'[周第（）()\[\]]', ' ', text)
+    weeks = set()
+    for part in re.split(r'[,，、;；\s]+', cleaned):
+        if not part:
+            continue
+        rng = re.match(r'^(\d+)\s*[-–~—到至]\s*(\d+)$', part)
+        if rng:
+            low, high = int(rng.group(1)), int(rng.group(2))
+            weeks.update(range(min(low, high), max(low, high) + 1))
+        elif re.match(r'^\d+$', part):
+            value = int(part)
+            if value > 0:
+                weeks.add(value)
+    return weeks
+
+
+def apply_single_double(weeks: set[int], raw) -> set[int]:
+    """按「单双周」标记过滤周次。
+
+    singleOrDoubleWeek 可能是「单」「双」「1」「2」「单周」「双周」等写法；
+    识别不出就原样返回。
+    """
+    if not weeks or raw is None:
+        return weeks
+    text = _text(raw)
+    if not text:
+        return weeks
+    if '单' in text:
+        return {w for w in weeks if w % 2 == 1}
+    if '双' in text:
+        return {w for w in weeks if w % 2 == 0}
+    # 数字编码：1=单周 2=双周
+    if text == '1':
+        return {w for w in weeks if w % 2 == 1}
+    if text == '2':
+        return {w for w in weeks if w % 2 == 0}
+    return weeks
 
 
 def _first_value(obj: dict, keys: list[str]):
@@ -182,19 +255,70 @@ def collect_courses(node, out: list[dict], depth: int = 0) -> None:
     day = _to_int(_first_value(node, DAY_KEYS))
     if name and day is not None and 1 <= day <= 7:
         section = normalize_sections(_first_value(node, SECTION_KEYS))
+        # 条目自带的周次与单双周标记：广科门户的 courseList 每个元素都带
+        # `week` + `singleOrDoubleWeek`，前端在客户端过滤。带上它们，
+        # 无论接口是「按周返回」还是「一次返回整学期」都能算对周次。
+        week_raw = _first_value(node, WEEK_TEXT_KEYS)
+        sd_raw = _first_value(node, SINGLE_DOUBLE_KEYS)
         out.append({
             'courseName': name,
             'teacher': _text(_first_value(node, TEACHER_KEYS)),
             'classroomName': _text(_first_value(node, LOCATION_KEYS)),
             'dayWeek': day,
             'whichSection': section,
-            'weekText': _text(_first_value(node, WEEK_TEXT_KEYS)),
+            '_weeks': parse_entry_weeks(week_raw),
+            '_singleDouble': _text(sd_raw),
         })
         # 课程对象内部一般不再嵌课程，收集完就返回
         return
 
     for value in node.values():
         collect_courses(value, out, depth + 1)
+
+
+def section_sort_key(section: str) -> int:
+    """节次字符串 -> 排序用数字（'3-4' -> 3；空 -> 999 排最后）。"""
+    match = re.match(r'(\d+)', section or '')
+    return int(match.group(1)) if match else 999
+
+
+def aggregate(collected: list[tuple[int, dict]]) -> dict[str, list[dict]]:
+    """把抓到的条目按周次归组，产出 App 可导入的 {"week": [entry, ...]}。
+
+    归组规则：
+    - 条目自带 `_weeks`（课程出现的周次集合）-> 按它归组，
+      并用 `_singleDouble` 做单双周过滤；
+    - 条目没有周次字段 -> 归到抓取它的那一周（按周返回的接口）。
+
+    全量去重：接口若是「一次返回整学期」，每次抓取的条目完全相同，
+    这里靠 (周, 课名, 教师, 地点, 星期, 节次) 只保留一份。
+    """
+    buckets: dict[str, list[dict]] = {}
+    seen: set[tuple] = set()
+
+    for loop_week, entry in collected:
+        weeks = entry.get('_weeks') or {loop_week}
+        weeks = apply_single_double(set(weeks), entry.get('_singleDouble'))
+        clean = {k: v for k, v in entry.items() if not k.startswith('_')}
+        for week in sorted(weeks):
+            key = (
+                week,
+                clean['courseName'],
+                clean['teacher'],
+                clean['classroomName'],
+                clean['dayWeek'],
+                clean['whichSection'],
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            buckets.setdefault(str(week), []).append(clean)
+
+    for week in buckets:
+        buckets[week].sort(
+            key=lambda e: (e['dayWeek'], section_sort_key(e['whichSection']))
+        )
+    return buckets
 
 
 def detect_week_param(url: str, explicit: str | None) -> tuple[str, int | None]:
@@ -335,9 +459,11 @@ def main() -> int:
     print(f'[*] 周次参数: {week_param}（当前值 {detected}）')
     print(f'[*] 抓取范围: {weeks[0]}..{weeks[-1]}（共 {len(weeks)} 周）')
 
-    result: dict[str, list[dict]] = {}
-    seen_signature = None
-    identical_weeks = 0
+    # 两阶段：先攒所有条目（带兜底周次），最后统一按条目自带周次归组。
+    # 因为接口可能「一次返回整学期」（条目自带 week），也可能按周返回；
+    # 两阶段能同时兼容，且跨批次重复会被去重。
+    collected: list[tuple[int, dict]] = []
+    whole_semester = False
     failures: list[int] = []
 
     dump_dir = None
@@ -380,34 +506,22 @@ def main() -> int:
 
         if not entries:
             print(f'[·] 第 {week} 周：无课程')
-            result[str(week)] = []
         else:
-            # 同周内去重（API 可能返回重复行）
-            unique: list[dict] = []
-            seen: set[tuple] = set()
             for entry in entries:
-                key = (entry['courseName'], entry['teacher'], entry['classroomName'],
-                       entry['dayWeek'], entry['whichSection'])
-                if key not in seen:
-                    seen.add(key)
-                    unique.append(entry)
-            result[str(week)] = [
-                {k: v for k, v in entry.items() if k != 'weekText'}
-                for entry in unique
-            ]
-            print(f'[✓] 第 {week} 周：{len(unique)} 条')
-
-            # 检测「每周结果完全相同」——说明周次参数被接口忽略了
-            signature = tuple(sorted(
-                (e['courseName'], e['dayWeek'], e['whichSection']) for e in unique
-            ))
-            if seen_signature is None:
-                seen_signature = signature
-            elif signature == seen_signature:
-                identical_weeks += 1
+                collected.append((week, entry))
+            with_week = sum(1 for e in entries if e['_weeks'])
+            print(f'[✓] 第 {week} 周：{len(entries)} 条'
+                  + (f'（{with_week} 条自带周次）' if with_week else ''))
+            if with_week and not whole_semester:
+                whole_semester = True
+                print('    ↳ 条目自带 week 字段 → 判定为「一次返回整学期」，'
+                      '不再逐周抓取')
+                break
 
         if index < len(weeks):
             time.sleep(args.delay)
+
+    result = aggregate(collected)
 
     if not any(result.values()):
         print('', file=sys.stderr)
@@ -427,10 +541,6 @@ def main() -> int:
     print(f'    周数 {len(result)}，条目 {total}')
     if failures:
         print(f'    ⚠️ {len(failures)} 周失败：{failures}')
-    if identical_weeks >= 3:
-        print('')
-        print('    ⚠️ 警告：多周结果完全相同，可能周次参数被接口忽略了。')
-        print('       检查 --week-param 是否正确，或换个请求重新复制 URL。')
     print('')
     print('下一步：把该文件传到手机 → App → 设置 → 导入课表 → 从文件导入（.json）')
     print('        ⚠️ 导入后需手动设置「第一周周一」')
