@@ -18,7 +18,8 @@
 
 | 文件 | 说明 |
 |---|---|
-| `console_snippet.js` | **推荐**。粘到浏览器控制台就能跑，不用装 Python、不用复制 Cookie |
+| **`启动.bat` + `gui.py`** | **推荐**。双击启动图形界面：填学号 + 复制 TOKEN 即可，学年学期总周数自动查 |
+| `console_snippet.js` | 浏览器控制台版。不用装 Python、不用复制 Cookie |
 | `crawl.py` | Python 版，纯标准库。适合脚本化 |
 | `selftest.py` | `crawl.py` 的纯逻辑自测（不联网，62 项断言） |
 | `TUTORIAL.md` | **分步使用教程**（先在 DevTools 里找请求，再跑脚本） |
