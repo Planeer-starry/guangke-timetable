@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""广科课表抓取工具 —— 图形界面版（傻瓜模式）。
+"""课表抓取工具 —— 图形界面版（傻瓜模式）。
 
 为什么能做得这么简单：接口细节已经实测确认（见 README「已验证的接口事实」）：
 
@@ -129,7 +129,7 @@ def describe_failure(payload: dict, status: int) -> str:
 class CrawlerApp:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title('广科课表抓取工具')
+        self.root.title('课表抓取工具')
         self.root.geometry('780x860')
         self.root.minsize(700, 760)
 
@@ -157,10 +157,10 @@ class CrawlerApp:
         outer = ttk.Frame(self.root, padding=16)
         outer.pack(fill='both', expand=True)
 
-        ttk.Label(outer, text='广科课表抓取工具', style='Title.TLabel').pack(anchor='w')
+        ttk.Label(outer, text='课表抓取工具', style='Title.TLabel').pack(anchor='w')
         ttk.Label(
             outer,
-            text='从教务系统抓取课表，生成可直接导入 App 的 timetable.json',
+            text='从广东科技学院教务系统抓取课表，生成可直接导入 App 的 timetable.json',
             style='Hint.TLabel',
         ).pack(anchor='w', pady=(2, 12))
 

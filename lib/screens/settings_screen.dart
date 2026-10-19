@@ -435,7 +435,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _sectionTitle(context, '关于'),
         ListTile(
           leading: const Icon(Icons.info_outline),
-          title: const Text('广科课表'),
+          title: const Text('简课表'),
           subtitle: _appVersion.isEmpty
               ? null
               : Text('$_appVersion（build $_versionCode）'),

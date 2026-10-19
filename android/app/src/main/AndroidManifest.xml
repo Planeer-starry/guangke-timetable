@@ -3,7 +3,7 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <application
-        android:label="广科课表"
+        android:label="简课表"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

@@ -774,7 +774,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           valueListenable: _data,
           builder: (BuildContext context, TimetableData data, _) {
             return Text(
-              data.meta.semesterName.isEmpty ? '广科课表' : data.meta.semesterName,
+              data.meta.semesterName.isEmpty ? '简课表' : data.meta.semesterName,
               // expanded 放大加粗；compact/medium 保持默认（titleLarge）
               style: windowSize.isExpanded
                   ? const TextStyle(fontSize: 24, fontWeight: FontWeight.w500)

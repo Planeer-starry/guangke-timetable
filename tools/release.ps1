@@ -169,7 +169,7 @@ $releaseDir = Join-Path $repoRoot 'release'
 if (-not (Test-Path $releaseDir)) {
     New-Item -ItemType Directory -Path $releaseDir | Out-Null
 }
-$destName = "guangke-timetable-$versionName+$versionCode.apk"
+$destName = "jiankebiao-$versionName+$versionCode.apk"
 $destPath = Join-Path $releaseDir $destName
 Copy-Item -Path $apkPath -Destination $destPath -Force
 

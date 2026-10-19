@@ -65,7 +65,7 @@ class _TimetableAppState extends State<TimetableApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '广科课表',
+      title: '简课表',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
         useMaterial3: true,

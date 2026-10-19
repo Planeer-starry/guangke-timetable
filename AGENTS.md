@@ -63,7 +63,8 @@
   不要改成写死的数字**
 - 只保留 `android/` 平台目录
 - 调试真机：OnePlus `OPD2506`，**Android 16 / API 36 / arm64**
-- 应用显示名（`android:label`）：`广科课表`（可改）
+- 应用显示名（`android:label`）：`简课表`（可改；**不要带"广科"** —— 应用已改为
+  面向多校的通用课表工具，学校名只出现在数据与爬虫工具里）
 
 > 本机已装：`platforms;android-35`、`platforms;android-36`、`build-tools;35.0.0/36.0.0`、
 > `platform-tools`、`cmdline-tools;latest`。

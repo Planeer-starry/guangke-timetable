@@ -1,4 +1,4 @@
-# 广科课表
+# 简课表
 
 一个专注于**广东科技学院**的 Android 课表应用。Flutter 编写，单机离线，数据全部存在本机。
 
@@ -119,7 +119,7 @@ android/app/src/main/
 
 **如果你的学校导入不成功，欢迎提交课表样表** —— 拿到真实文件才能针对你的学校适配：
 
-👉 [导入失败 / 课表格式不支持 · 提交 Issue](https://github.com/Planeer-starry/guangke-timetable/issues/new?template=import-failure.yml)
+👉 [导入失败 / 课表格式不支持 · 提交 Issue](https://github.com/Planeer-starry/jiankebiao/issues/new?template=import-failure.yml)
 
 提交时请附上教务系统导出的 `.xls` / `.xlsx`，并**先删掉表格顶部的姓名、学号、班级等信息**。
 

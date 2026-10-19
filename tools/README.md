@@ -68,8 +68,8 @@
 ## 产物在哪
 
 ```
-release\guangke-timetable-<版本号>.apk
-（例如 release\guangke-timetable-1.2.0+3.apk）
+release\jiankebiao-<版本号>.apk
+（例如 release\jiankebiao-1.2.1+4.apk）
 ```
 
 把这个文件通过微信 / QQ / 网盘发给同学即可。

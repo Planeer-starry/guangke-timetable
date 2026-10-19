@@ -34,7 +34,7 @@ TimetableData _configuredData() {
 /// - StorageService：临时目录（测试里不点危险操作，实际不会读写）。
 Future<void> pumpSettings(WidgetTester tester) async {
   PackageInfo.setMockInitialValues(
-    appName: '广科课表',
+    appName: '简课表',
     packageName: 'com.planeer.timetable',
     version: '1.0.0',
     buildNumber: '1',
