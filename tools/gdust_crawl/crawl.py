@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import re
 import sys
 import time
@@ -378,11 +379,10 @@ def fetch(url: str, cookie: str, timeout: int = 20) -> tuple[str, int]:
     """
     request = urllib.request.Request(url, method='GET')
     request.add_header('Cookie', cookie)
-    request.add_header('User-Agent',
-                       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                       'AppleWebKit/537.36 (KHTML, like Gecko) '
-                       'Chrome/124.0 Safari/537.36')
-    request.add_header('Accept', 'application/json, text/plain, */*')
+    # 补齐真实浏览器会带的头。**这不等于隐身**（IP / 访问模式照样可见），
+    # 只是避免「只有 3 个头」这种最容易触发 WAF 的裸脚本特征。
+    for name, value in BROWSER_HEADERS.items():
+        request.add_header(name, value)
     request.add_header('Referer', _origin_of(url))
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
@@ -392,6 +392,25 @@ def fetch(url: str, cookie: str, timeout: int = 20) -> tuple[str, int]:
         return body, error.code
     except urllib.error.URLError as error:
         return f'__NETWORK_ERROR__ {error.reason}', 0
+
+
+# 模拟真实浏览器的请求头集合（理由见 fetch() 里的注释）
+BROWSER_HEADERS = {
+    'User-Agent': (
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+        '(KHTML, like Gecko) Chrome/124.0 Safari/537.36'
+    ),
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'identity',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-CH-UA': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'Sec-CH-UA-Mobile': '?0',
+    'Sec-CH-UA-Platform': '"Windows"',
+    'Connection': 'keep-alive',
+}
 
 
 def _origin_of(url: str) -> str:
@@ -509,17 +528,25 @@ def main() -> int:
         else:
             for entry in entries:
                 collected.append((week, entry))
-            with_week = sum(1 for e in entries if e['_weeks'])
+            covered: set[int] = set()
+            for entry in entries:
+                covered |= entry.get('_weeks') or set()
+            span = ''
+            if covered:
+                low, high = min(covered), max(covered)
+                span = f'第 {low} 周' if low == high else f'第 {low}-{high} 周'
             print(f'[✓] 第 {week} 周：{len(entries)} 条'
-                  + (f'（{with_week} 条自带周次）' if with_week else ''))
-            if with_week and not whole_semester:
+                  + (f'（覆盖 {span}）' if span else ''))
+            # 只有条目覆盖了请求周之外的其他周，才判定为整学期返回
+            if (covered - {week}) and not whole_semester:
                 whole_semester = True
-                print('    ↳ 条目自带 week 字段 → 判定为「一次返回整学期」，'
+                print(f'    ↳ 条目覆盖多个周（{span}）→ 接口一次返回整学期，'
                       '不再逐周抓取')
                 break
 
         if index < len(weeks):
-            time.sleep(args.delay)
+            # 固定间隔本身是脚本特征，随机化到 1.0x ~ 2.5x
+            time.sleep(random.uniform(args.delay, args.delay * 2.5))
 
     result = aggregate(collected)
 

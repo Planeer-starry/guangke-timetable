@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import sys
 import threading
+import time
 import tkinter as tk
 import urllib.error
 import urllib.request
@@ -48,6 +50,31 @@ USER_AGENT = (
     '(KHTML, like Gecko) Chrome/124.0 Safari/537.36'
 )
 
+# 模拟真实浏览器的请求头集合。
+#
+# 说明：**这不等于「隐身」** —— IP、TOKEN、访问模式该看见的都能看见。
+# 这里只是避免「一眼就是裸脚本」这种最容易被 WAF 拦下的特征
+# （只有 4 个头、没有 Accept-Language、没有 Sec-Fetch-*）。
+BROWSER_HEADERS = {
+    'User-Agent': USER_AGENT,
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'identity',
+    'Origin': 'https://portal.gdust.edu.cn',
+    'Referer': PORTAL + 'home',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-CH-UA': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    'Sec-CH-UA-Mobile': '?0',
+    'Sec-CH-UA-Platform': '"Windows"',
+    'Connection': 'keep-alive',
+}
+
+# 周与周之间的随机间隔（秒）。固定间隔本身就是脚本特征，
+# 随机化后与人工翻周的节奏更接近。
+FETCH_DELAY_RANGE = (0.8, 2.2)
+
 
 # ═══════════════════════════ 网络 ═══════════════════════════
 
@@ -59,9 +86,8 @@ def fetch_json(url: str, token: str, timeout: int = 20) -> tuple[dict, int]:
     """
     request = urllib.request.Request(url, method='GET')
     request.add_header('TOKEN', token)
-    request.add_header('User-Agent', USER_AGENT)
-    request.add_header('Accept', 'application/json, text/plain, */*')
-    request.add_header('Referer', PORTAL)
+    for name, value in BROWSER_HEADERS.items():
+        request.add_header(name, value)
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             body = response.read().decode('utf-8', errors='replace')
@@ -413,15 +439,31 @@ class CrawlerApp:
 
             for entry in entries:
                 collected.append((week, entry))
-            with_week = sum(1 for e in entries if e['_weeks'])
+            # 条目声称覆盖了哪些周
+            covered: set[int] = set()
+            for entry in entries:
+                covered |= entry.get('_weeks') or set()
+            span = ''
+            if covered:
+                low, high = min(covered), max(covered)
+                span = f'第 {low} 周' if low == high else f'第 {low}-{high} 周'
             self._log_from_worker(
                 f'  ✓ 第 {week} 周：{len(entries)} 条'
-                + (f'（{with_week} 条自带周次）' if with_week else '')
+                + (f'（覆盖 {span}）' if span else '')
             )
-            if with_week and not whole_semester:
+
+            # 只有「条目覆盖了请求周之外的其他周」才说明接口一次返回整学期。
+            # 反例：按周返回的接口，条目自带的 week 就等于请求周——
+            # 这种情况不能提前结束，否则只拿到一周。
+            if (covered - {week}) and not whole_semester:
                 whole_semester = True
-                self._log_from_worker('    ↳ 条目自带周次 → 接口一次返回整学期，提前结束')
+                self._log_from_worker(
+                    f'    ↳ 条目覆盖多个周（{span}）→ 接口一次返回整学期，提前结束'
+                )
                 break
+
+            # 只在真的要抓下一周时才等待（随机间隔，避免固定节奏）
+            time.sleep(random.uniform(*FETCH_DELAY_RANGE))
 
         # ── 步骤 3：聚合 ──
         self._set_status('整理数据…')
