@@ -45,6 +45,103 @@ class SheetDragHandle extends StatelessWidget {
   }
 }
 
+/// 通用头部卡片：左边条 + 标题（可带徽章）+ 若干说明行。
+///
+/// 长按面板（课程上下文）、单击面板、导入面板共用同一套外观，
+/// 保证「所有底部弹窗第一眼的观感」一致。
+class SheetHeaderCard extends StatelessWidget {
+  const SheetHeaderCard({
+    super.key,
+    required this.color,
+    required this.title,
+    this.lines = const <String>[],
+    this.badge,
+  });
+
+  /// 左边条与底色着色（课程面板传课程色，导入面板传主色）。
+  final Color color;
+
+  final String title;
+
+  /// 说明行（时间、地点教师等）；null 或空串的行会被自动省略。
+  final List<String> lines;
+
+  /// 标题右侧的徽章（如「本周停课」）。
+  final Widget? badge;
+
+  @override
+  Widget build(BuildContext context) {
+    final ThemeData theme = Theme.of(context);
+    final ColorScheme colors = theme.colorScheme;
+    final Widget? mark = badge;
+    final List<String> visible = <String>[
+      for (final String line in lines)
+        if (line.isNotEmpty) line,
+    ];
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      Flexible(
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      if (mark != null) ...<Widget>[
+                        const SizedBox(width: 8),
+                        mark,
+                      ],
+                    ],
+                  ),
+                  for (int i = 0; i < visible.length; i++) ...<Widget>[
+                    SizedBox(height: i == 0 ? 4 : 2),
+                    Text(
+                      visible[i],
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 课程上下文卡片：课程色左边条 + 课名（+ 停课徽章）+ 时间 + 地点教师。
 ///
 /// 弹窗第一眼要回答的是「我在看/操作哪门课」，所以这块放在最上方。
@@ -60,80 +157,16 @@ class SheetCourseHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final ColorScheme colors = theme.colorScheme;
-    final Color courseColor = Color(occurrence.course.colorValue);
-    final String timeLine = courseTimeLine(occurrence, periods);
-    final String metaLine = courseMetaLine(occurrence);
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 20),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: courseColor.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Container(
-              width: 4,
-              decoration: BoxDecoration(
-                color: courseColor,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      Flexible(
-                        child: Text(
-                          occurrence.course.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (occurrence.cancelled) ...<Widget>[
-                        const SizedBox(width: 8),
-                        const SheetBadge(text: '本周停课'),
-                      ],
-                    ],
-                  ),
-                  if (timeLine.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 4),
-                    Text(
-                      timeLine,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                  if (metaLine.isNotEmpty) ...<Widget>[
-                    const SizedBox(height: 2),
-                    Text(
-                      metaLine,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+    return SheetHeaderCard(
+      color: Color(occurrence.course.colorValue),
+      title: occurrence.course.name,
+      lines: <String>[
+        courseTimeLine(occurrence, periods),
+        courseMetaLine(occurrence),
+      ],
+      badge: occurrence.cancelled
+          ? const SheetBadge(text: '本周停课')
+          : null,
     );
   }
 }

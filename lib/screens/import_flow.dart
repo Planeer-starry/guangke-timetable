@@ -16,6 +16,7 @@ import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/jwxt_excel_importer.dart';
 import 'package:timetable/utils/timetable_importer.dart';
+import 'package:timetable/widgets/course_sheet_parts.dart';
 
 /// 课表导入完整流程（首页与设置页共用）：
 /// 选来源（JSON 文件 / 剪贴板 / 教务 Excel）→ 读内容 → 解析 → 预览 →
@@ -51,28 +52,47 @@ class _ImportFlow {
   final void Function(TimetableData updated)? onDataChanged;
 
   Future<void> run() async {
+    // 与课程操作面板共用同一套外壳与零件（限宽 480 / 圆角 28 / 拖拽条 /
+    // 头部卡片 / 动作行），保证「所有底部弹窗长得一样」。
+    final ColorScheme colors = Theme.of(context).colorScheme;
     final String? source = await showModalBottomSheet<String>(
       context: context,
+      constraints: courseSheetConstraints,
+      backgroundColor: colors.surfaceContainerLow,
+      shape: courseSheetShape,
+      clipBehavior: Clip.antiAlias,
       builder: (BuildContext sheetContext) => SafeArea(
+        top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            ListTile(
-              leading: const Icon(Icons.table_view),
-              title: const Text('从教务 Excel 导入（.xls / .xlsx）'),
-              subtitle: const Text('教务系统导出的课表，可自动识别学期'),
+            const SheetDragHandle(),
+            SheetHeaderCard(
+              color: colors.primary,
+              title: '导入课表',
+              lines: <String>['选择数据来源。导入后会替换当前课表'],
+            ),
+            const SizedBox(height: 8),
+            SheetActionRow(
+              icon: Icons.table_view,
+              title: '从教务 Excel 导入',
+              subtitle: '.xls / .xlsx · 自动识别学期、节次与周次',
               onTap: () => Navigator.of(sheetContext).pop('jwxt'),
             ),
-            ListTile(
-              leading: const Icon(Icons.folder_open),
-              title: const Text('从文件导入（.json）'),
+            SheetActionRow(
+              icon: Icons.folder_open,
+              title: '从文件导入',
+              subtitle: '.json · App 导出或爬虫生成的文件',
               onTap: () => Navigator.of(sheetContext).pop('file'),
             ),
-            ListTile(
-              leading: const Icon(Icons.content_paste),
-              title: const Text('从剪贴板导入'),
+            SheetActionRow(
+              icon: Icons.content_paste,
+              title: '从剪贴板导入',
+              subtitle: '粘贴 JSON 文本',
               onTap: () => Navigator.of(sheetContext).pop('clipboard'),
             ),
+            const SizedBox(height: 8),
           ],
         ),
       ),
