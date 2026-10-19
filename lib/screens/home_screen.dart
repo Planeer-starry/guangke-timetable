@@ -4,7 +4,6 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:timetable/constants/app_config.dart';
 import 'package:timetable/models/course.dart';
 import 'package:timetable/models/course_override.dart';
-import 'package:timetable/models/period.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/course_edit_screen.dart';
@@ -18,12 +17,11 @@ import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/theme/week_grid_dimens.dart';
-import 'package:timetable/widgets/cell_action_sheet.dart';
 import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/timetable_query.dart';
 import 'package:timetable/utils/week_mask.dart';
 import 'package:timetable/utils/week_math.dart';
-import 'package:timetable/widgets/course_detail_sheet.dart';
+import 'package:timetable/widgets/course_action_sheet.dart';
 import 'package:timetable/widgets/week_grid.dart';
 
 /// 星期几中文名（下标 = dayWeek - 1），用于移动成功的提示文案。
@@ -389,26 +387,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   // ───────────────────────── 本周停课 / 取消本周调整 ─────────────────────────
 
-  /// 打开课程详情 sheet（单课 / 多课选择后共用），
-  /// 带「本周停课 / 取消本周调整」入口（J3）。
-  void _showDetail(
-    BuildContext context,
-    CourseOccurrence occurrence,
-    List<Period> periods,
-  ) {
-    showCourseDetailSheet(
-      context,
-      occurrence: occurrence,
-      periods: periods,
-      onEdit: () => _editCourse(occurrence.course),
-      onDelete: () => _confirmDeleteCourse(occurrence.course),
-      currentWeek: _displayWeek.value,
-      hasOverrideThisWeek: _hasOverrideThisWeek(occurrence),
-      onCancelThisWeek: () => _cancelThisWeek(occurrence),
-      onClearWeekAdjust: () => _clearWeekAdjust(occurrence),
-    );
-  }
-
   /// 本周该课是否已有 override（改时间地点或停课都算）。
   bool _hasOverrideThisWeek(CourseOccurrence occurrence) {
     return _data.value.overrides.any(
@@ -465,11 +443,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     }
   }
 
-  // ───────────────────────── 长按菜单 / 移动模式 ─────────────────────────
+  // ───────────────────────── 课程操作面板 / 移动模式 ─────────────────────────
 
-  /// 长按课程格 → 操作菜单（编辑 / 移动到… / 删除）。
-  /// 多课格（分班/选项课）先弹选择列表，与点击流程一致。
-  Future<void> _openCellMenu(
+  /// 打开课程操作面板 —— **单击与长按共用同一个入口**。
+  ///
+  /// 早先单击弹「详情」、长按弹「操作」，两个面板的动作交叉重复
+  /// （都有编辑和删除，但「移动到…」只在长按、「本周停课」只在单击），
+  /// 用户得记住哪个手势能做什么。现在统一：一次看全所有操作。
+  ///
+  /// 多课格（分班/选项课）先弹选择列表，再进操作面板。
+  Future<void> _openCourseSheet(
     BuildContext context,
     List<CourseOccurrence> cell,
     int week,
@@ -490,24 +473,31 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       _data.value,
       occurrence.course.name,
     ).length;
-    final String? action = await CellActionSheet.show(
+    final String? action = await CourseActionSheet.show(
       context,
       occurrence: occurrence,
       periods: _data.value.periods,
       sameNameCount: sameNameCount,
+      currentWeek: _displayWeek.value,
+      hasOverrideThisWeek: _hasOverrideThisWeek(occurrence),
     );
     if (action == null || !context.mounted) {
       return;
     }
-    // sheet 已关，再执行动作（与 detail sheet 的约定一致）
-    if (action == 'edit') {
-      _editCourse(occurrence.course);
-    } else if (action == 'move') {
-      _enterMoveMode(occurrence, week);
-    } else if (action == 'delete') {
-      _confirmDeleteCourse(occurrence.course);
-    } else if (action == 'delete_named') {
-      _confirmDeleteCoursesNamed(occurrence.course);
+    // 面板已关，再执行动作（避免编辑页 / 确认框被面板遮住）
+    switch (action) {
+      case CourseActionSheet.actionEdit:
+        _editCourse(occurrence.course);
+      case CourseActionSheet.actionMove:
+        _enterMoveMode(occurrence, week);
+      case CourseActionSheet.actionCancelWeek:
+        await _cancelThisWeek(occurrence);
+      case CourseActionSheet.actionClearWeek:
+        await _clearWeekAdjust(occurrence);
+      case CourseActionSheet.actionDelete:
+        _confirmDeleteCourse(occurrence.course);
+      case CourseActionSheet.actionDeleteNamed:
+        _confirmDeleteCoursesNamed(occurrence.course);
     }
   }
 
@@ -955,9 +945,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 weekMonday: mondayOfWeek(data.meta.week1Monday, week),
                 isCurrentWeek: week == _effectiveWeek(data),
                 onCellTap: (List<CourseOccurrence> cell) =>
-                    _openCell(context, cell, data.periods),
+                    _openCourseSheet(context, cell, week),
                 onCellLongPress: (List<CourseOccurrence> cell) =>
-                    _openCellMenu(context, cell, week),
+                    _openCourseSheet(context, cell, week),
                 isMoving: _isMoving,
                 movingCourseId: _movingOccurrence?.course.id,
                 onMoveTargetPicked: _onMoveTargetPicked,
@@ -969,24 +959,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         ),
       ],
     );
-  }
-
-  /// 点击课程格：单课直接进详情；多课（教务导出的分班/选项课）先弹选择列表。
-  Future<void> _openCell(
-    BuildContext context,
-    List<CourseOccurrence> cell,
-    List<Period> periods,
-  ) async {
-    if (cell.length == 1) {
-      _showDetail(context, cell.single, periods);
-      return;
-    }
-    final CourseOccurrence? picked = await _pickOccurrence(context, cell);
-    // 跨 await 后使用 BuildContext 必须检查 context.mounted，
-    // 不能用 State.mounted（lint: use_build_context_synchronously）
-    if (picked != null && context.mounted) {
-      _showDetail(context, picked, periods);
-    }
   }
 
   /// 移动模式提示条：告知正在移动哪门课 + 取消入口。
