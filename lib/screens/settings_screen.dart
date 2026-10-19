@@ -12,7 +12,7 @@ import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/import_flow.dart';
-import 'package:timetable/screens/pack_manager_screen.dart';
+
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
@@ -589,20 +589,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context,
               service: widget.paletteService,
               onImport: _importPalettePack,
-            ),
-          ),
-        ),
-        ListTile(
-          leading: const Icon(Icons.style),
-          title: const Text('管理主题与配色'),
-          subtitle: const Text('重命名 / 复制 JSON / 删除'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.of(context).push<void>(
-            MaterialPageRoute<void>(
-              builder: (_) => PackManagerScreen(
-                themeService: widget.themeService,
-                paletteService: widget.paletteService,
-              ),
             ),
           ),
         ),

@@ -4,11 +4,14 @@
 /// 动作行），保证所有底部弹窗的第一眼观感一致。
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'package:timetable/models/theme_pack.dart';
 import 'package:timetable/services/theme_service.dart';
 import 'package:timetable/widgets/course_sheet_parts.dart';
+import 'package:timetable/widgets/pack_actions.dart';
 
 /// 主题包列表面板：内置在前、导入在后，点选即生效；
 /// 「导入主题包…」走文件选择（回调由设置页提供）。
@@ -106,7 +109,8 @@ class ThemePackSheet extends StatelessWidget {
     );
   }
 
-  /// 一行主题包：36dp 色块 + 名称 + 来源标注 + 选中态（导入项另有删除）。
+  /// 一行主题包：36dp 色块 + 名称 + 来源标注 + 选中态
+  /// （行尾「⋯」菜单：内置仅复制，导入可重命名 / 复制 / 删除）。
   Widget _packRow(BuildContext context, ThemePack pack, ThemePack active) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
@@ -135,19 +139,41 @@ class ThemePackSheet extends StatelessWidget {
             : (pack.coursePalette != null ? '导入 · 含课程配色' : '导入'),
         style: theme.textTheme.bodySmall,
       ),
-      trailing: pack.builtin
-          ? (selected ? Icon(Icons.check_circle, color: colors.primary) : null)
-          : Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                if (selected) Icon(Icons.check_circle, color: colors.primary),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: '删除主题包',
-                  onPressed: () => service.remove(pack),
-                ),
-              ],
-            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (selected) Icon(Icons.check_circle, color: colors.primary),
+          PackActionsButton(
+            builtin: pack.builtin,
+            onRename: () async {
+              final String? input = await showRenamePackDialog(
+                context,
+                initialName: pack.name,
+              );
+              if (input == null || !context.mounted) {
+                return;
+              }
+              final String newName = input.trim();
+              if (newName.isEmpty || newName == pack.name) {
+                return;
+              }
+              await service.rename(pack, newName);
+              if (!context.mounted) {
+                return;
+              }
+              ScaffoldMessenger.of(context)
+                  .showSnackBar(SnackBar(content: Text('已重命名为「$newName」')));
+            },
+            onCopyJson: () => copyPackJson(context, jsonEncode(pack.toJson())),
+            onDelete: () async {
+              if (!await confirmDeletePack(context)) {
+                return;
+              }
+              await service.remove(pack);
+            },
+          ),
+        ],
+      ),
       onTap: () => service.select(pack),
     );
   }

@@ -90,6 +90,8 @@ void main() {
     expect(find.text('外观'), findsOneWidget);
     expect(find.text('课表'), findsOneWidget);
     expect(find.text('关于'), findsOneWidget);
+    // J8 返工：独立管理页已移除，入口行不应存在
+    expect(find.text('管理主题与配色'), findsNothing);
   });
 
   testWidgets('手机尺寸（400×800）下设置页保持单列（无卡片）', (WidgetTester tester) async {
@@ -102,5 +104,7 @@ void main() {
     expect(find.byType(Card), findsNothing);
     expect(find.byType(ListView), findsOneWidget);
     expect(find.text('学期'), findsOneWidget);
+    // J8 返工：独立管理页已移除，入口行不应存在
+    expect(find.text('管理主题与配色'), findsNothing);
   });
 }

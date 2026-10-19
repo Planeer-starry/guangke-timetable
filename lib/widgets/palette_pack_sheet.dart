@@ -4,11 +4,14 @@
 /// 动作行），保证所有底部弹窗的第一眼观感一致。
 library;
 
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
 import 'package:timetable/models/palette_pack.dart';
 import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/widgets/course_sheet_parts.dart';
+import 'package:timetable/widgets/pack_actions.dart';
 
 /// 单个配色预览色块（默认 22dp 方形、圆角 6）。
 ///
@@ -163,7 +166,8 @@ class PalettePackSheet extends StatelessWidget {
   }
 
   /// 一行配色：一排色块预览 + 名称 + 来源标注 + 选中态
-  /// （导入项可删；主题包临时包仅展示、不可点选）。
+  /// （行尾「⋯」菜单：内置仅复制，导入可重命名 / 复制 / 删除；
+  /// 主题包临时包是只读视图，不显示菜单）。
   Widget _packRow(BuildContext context, PalettePack pack, PalettePack active) {
     final ThemeData theme = Theme.of(context);
     final ColorScheme colors = theme.colorScheme;
@@ -188,16 +192,40 @@ class PalettePackSheet extends StatelessWidget {
       ),
       trailing: fromTheme
           ? check
-          : pack.builtin
-          ? check
           : Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
                 ?check,
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  tooltip: '删除配色',
-                  onPressed: () => service.remove(pack),
+                PackActionsButton(
+                  builtin: pack.builtin,
+                  onRename: () async {
+                    final String? input = await showRenamePackDialog(
+                      context,
+                      initialName: pack.name,
+                    );
+                    if (input == null || !context.mounted) {
+                      return;
+                    }
+                    final String newName = input.trim();
+                    if (newName.isEmpty || newName == pack.name) {
+                      return;
+                    }
+                    await service.rename(pack, newName);
+                    if (!context.mounted) {
+                      return;
+                    }
+                    ScaffoldMessenger.of(
+                      context,
+                    ).showSnackBar(SnackBar(content: Text('已重命名为「$newName」')));
+                  },
+                  onCopyJson: () =>
+                      copyPackJson(context, jsonEncode(pack.toJson())),
+                  onDelete: () async {
+                    if (!await confirmDeletePack(context)) {
+                      return;
+                    }
+                    await service.remove(pack);
+                  },
                 ),
               ],
             ),

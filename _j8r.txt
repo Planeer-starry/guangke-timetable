@@ -1,0 +1,43 @@
+refactor(J8): 取消独立管理页，管理动作并入两个面板的「⋯」菜单
+
+用户反馈「不要单独加管理入口太重复了」——独立管理页与主题包/配色面板
+功能重叠，设置页也多了第四行。改为把动作挂到面板每行的「⋯」上。
+
+【删除】
+- lib/screens/pack_manager_screen.dart（303 行）
+- test/pack_manager_test.dart（118 行，有效断言已移植到两个面板测试）
+- settings_screen 的「管理主题与配色」行与 import
+  （test/settings_tablet_test 补 findsNothing 断言防止回归）
+
+【新增】lib/widgets/pack_actions.dart（179 行）
+- PackActionsButton：PopupMenuButton（more_vert 20dp onSurfaceVariant）
+  内置包只给「复制 JSON」（方便以内置为基础改一份自定义的）
+  导入包给「重命名 / 复制 JSON / 删除」
+- showRenamePackDialog：**controller 由对话框自身 StatefulWidget 持有**，
+  在它自己的 dispose 里释放（J8 踩过的 used-after-disposed）
+- confirmDeletePack：二次确认
+- copyPackJson：Clipboard + SnackBar
+  纯 UI 回调注入，不依赖具体模型（ThemePack / PalettePack 共用）
+
+【接入】
+- theme_pack_sheet / palette_pack_sheet：行尾「选中勾 + 删除按钮」
+  → 「选中勾 + PackActionsButton」
+- 配色面板里「主题包临时包」（id 以 theme: 开头）保持只读，无 ⋯
+
+【保留】
+ThemePack/PalettePack.copyWith、两边 service 的 rename、
+settings_screen 的 _lastThemeId「重命名不注入配色」修复（4 处完整保留）
+
+【测试】净 +4（393 全绿）
+- theme_pack_sheet_test：内置菜单仅「复制 JSON」/ 重命名全流程 /
+  空白不提交 / 复制 JSON（拦截 SystemChannels.platform 捕获 Clipboard.setData，
+  并用 ThemePack.fromJson 做往返闸门）
+- palette_pack_sheet_test：同上 4 条 + theme: 临时包行无 ⋯
+- settings_tablet_test：两个用例各补「管理主题与配色」findsNothing
+
+【验证】
+- flutter analyze: No issues found
+- flutter test: 393 全绿
+- grep PackManagerScreen：0 处实际引用（仅剩 2 条 findsNothing 断言）
+- 真机（平板）：设置页外观只剩三行；主题包面板每行有 ⋯；
+  内置包菜单只有「复制 JSON」
