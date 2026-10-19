@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:home_widget/home_widget.dart';
 import 'package:timetable/models/theme_pack.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/utils/next_class.dart';
 import 'package:timetable/utils/today_classes.dart';
 import 'package:timetable/utils/week_grid_model.dart';
+import 'package:timetable/utils/widget_skin.dart';
 
 /// 桌面小组件数据同步（封装 home_widget，UI 层不直接碰它的 API）。
 ///
@@ -31,18 +34,42 @@ class WidgetService {
   static const String _keyWeekGrids = 'week_grids';
   static const String _keyWeekEmptyText = 'week_empty_text';
   static const String _keyAccent = 'widget_accent';
+  static const String _keySkin = 'widget_skin';
 
   /// 当前小组件强调色（ARGB int）；null = 从未设置过主题包
   /// （写空串，Kotlin 侧 toLongOrNull 得 null 回退资源色）。
   ///
   /// 由 main 启动 + 设置页主题切换时 [setAccent] 更新（J6）。
-  /// ⚠️ 卡片背景色 / 文字色**不**跟随主题包：RemoteViews 无法设置
-  /// 程序化创建的圆角 Drawable，改纯色会丢圆角；文字跟着变有对比度风险。
+  /// 卡片背景 / 文字色经皮肤（J9 [setSkin]）跟随主题包：Android 12+
+  /// 用 backgroundTintList 给现有圆角 shape 换色（保圆角），对比度由
+  /// Material 3 角色色保证；12 以下只有文字色跟随。
   static int? _accentValue;
+
+  /// 当前小组件皮肤（J9）的 JSON payload（`{"light":{...},"dark":{...}}`）；
+  /// null = 从未设置过主题包（写空串，Kotlin 侧解析失败回退资源色）。
+  ///
+  /// 与 [_accentValue] 同套路：[setSkin] 只记内存，[refreshAll] 统一写入，
+  /// 保证每个数据变更点刷新时皮肤不会被清空。
+  static String? _skinPayload;
 
   /// 按主题包设置小组件强调色（`widgetAccent ?? seedColor`）。
   static void setAccent(ThemePack pack) {
     _accentValue = pack.widgetAccent ?? pack.seedColor;
+  }
+
+  /// 按主题包计算小组件皮肤（J9：卡片背景 / 文字 / 分隔线 / 淡底）。
+  ///
+  /// 亮/暗两套由 [widgetSkinFromTheme] 用 Material 3 角色色算好，
+  /// Kotlin 侧按系统深色模式挑一套；Android 12+ 经 backgroundTintList
+  /// 给现有圆角 shape 换色（SRC_IN 保留圆角），12 以下只应用文字色。
+  static void setSkin(ThemePack pack) {
+    final ({WidgetSkin light, WidgetSkin dark}) skins = widgetSkinFromTheme(
+      pack,
+    );
+    _skinPayload = jsonEncode(<String, dynamic>{
+      'light': skins.light.toJson(),
+      'dark': skins.dark.toJson(),
+    });
   }
 
   /// 重新计算候选并同步「下节课」小组件。
@@ -117,6 +144,8 @@ class WidgetService {
       _keyAccent,
       _accentValue?.toString() ?? '',
     );
+    // 主题包皮肤（J9）：每次全量刷新都重写一次，防止被其它路径清空
+    await HomeWidget.saveWidgetData<String>(_keySkin, _skinPayload ?? '');
     await refreshNextClass(data, now: now, schedule: schedule);
     await refreshToday(data, now: now, schedule: schedule);
     await refreshWeek(data, now: now, schedule: schedule);

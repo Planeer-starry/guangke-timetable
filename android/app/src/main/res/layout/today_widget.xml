@@ -3,6 +3,7 @@
      表头永远显示（日期 · 周次），主体区有课逐行渲染、没课左对齐一行文案。
      行内容由 Kotlin 用 RemoteViews.addView(R.id.today_rows, …) 动态填充。 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/today_widget_root"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"

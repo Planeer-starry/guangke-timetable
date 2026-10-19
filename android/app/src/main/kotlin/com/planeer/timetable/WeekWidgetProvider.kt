@@ -40,15 +40,22 @@ class WeekWidgetProvider : HomeWidgetProvider() {
       val start = runCatching { LocalDate.parse(w.weekStart) }.getOrNull()
       start != null && !today.isBefore(start) && today.isBefore(start.plusDays(7))
     }
-    val emptyColor = ContextCompat.getColor(context, R.color.widget_grid_empty)
-    val accentColor = WidgetColors.accentOf(widgetData, context)
+    // J9 皮肤：在场时空格底 / 强调色都从皮肤取，否则回退 res 资源
+    val skin = WidgetColors.skinOf(widgetData, context)
+    val emptyColor = skin?.gridEmpty
+        ?: ContextCompat.getColor(context, R.color.widget_grid_empty)
+    val accentColor = skin?.accent ?: WidgetColors.accentOf(widgetData, context)
     // 今天列的高亮：accent 的半透明版本
     val highlightColor = (accentColor and 0x00FFFFFF) or (0x33 shl 24)
 
     for (appWidgetId in appWidgetIds) {
       val views = RemoteViews(context.packageName, R.layout.week_widget)
+      if (skin != null) {
+        applySkin(views, skin)
+      }
       if (week != null && week.hasAnyCourse()) {
-        renderGrid(context, views, week, today, emptyColor, highlightColor)
+        renderGrid(
+            context, views, week, today, emptyColor, highlightColor, skin?.sub)
       } else {
         renderEmpty(views, week, widgetData)
       }
@@ -62,6 +69,17 @@ class WeekWidgetProvider : HomeWidgetProvider() {
     }
   }
 
+  /** 应用皮肤（J9）：根卡片 tint（Android 12+）+ 表头 / 分隔线 / 空态文字色。 */
+  private fun applySkin(views: RemoteViews, skin: WidgetColors.Skin) {
+    WidgetColors.applyCardTint(views, R.id.week_widget_root, skin.card)
+    views.setTextColor(R.id.week_header_label, skin.sub)
+    for (headId in HEAD_IDS) {
+      views.setTextColor(headId, skin.sub)
+    }
+    views.setInt(R.id.week_divider, "setBackgroundColor", skin.divider)
+    views.setTextColor(R.id.week_empty, skin.title)
+  }
+
   /** 网格态：表头 7 列（今天列高亮）+ 5 行 × 7 格动态 addView。 */
   private fun renderGrid(
       context: Context,
@@ -70,6 +88,7 @@ class WeekWidgetProvider : HomeWidgetProvider() {
       today: LocalDate,
       emptyColor: Int,
       highlightColor: Int,
+      subColor: Int?,
   ) {
     views.setViewVisibility(R.id.week_header_row, View.VISIBLE)
     views.setViewVisibility(R.id.week_rows, View.VISIBLE)
@@ -77,25 +96,16 @@ class WeekWidgetProvider : HomeWidgetProvider() {
 
     views.setTextViewText(R.id.week_header_label, week.weekLabel)
     val dayNames = listOf("一", "二", "三", "四", "五", "六", "日")
-    val headIds =
-        listOf(
-            R.id.week_head_mon,
-            R.id.week_head_tue,
-            R.id.week_head_wed,
-            R.id.week_head_thu,
-            R.id.week_head_fri,
-            R.id.week_head_sat,
-            R.id.week_head_sun)
     val todayIndex = today.dayOfWeek.value - 1 // 1=周一 → 0
     for (day in 0..6) {
       val date = week.dates.getOrNull(day) ?: ""
-      views.setTextViewText(headIds[day], "${dayNames[day]}\n$date")
+      views.setTextViewText(HEAD_IDS[day], "${dayNames[day]}\n$date")
       // ★ 每格都必须显式设背景，不能只给"今天"设。
       // RemoteViews 是【增量应用】到已存在的 View 上的；表头这 7 个格子是
       // 布局里固有的 View，updateAppWidget 时不会被重建。若今天之外的分支
       // 什么都不做，昨天高亮的那格就会一直亮着，几天后满屏都是高亮。
       views.setInt(
-          headIds[day],
+          HEAD_IDS[day],
           "setBackgroundColor",
           if (day == todayIndex) highlightColor else Color.TRANSPARENT,
       )
@@ -105,6 +115,9 @@ class WeekWidgetProvider : HomeWidgetProvider() {
     for (row in week.rows) {
       val rowRv = RemoteViews(context.packageName, R.layout.week_row)
       rowRv.setTextViewText(R.id.row_label, row.label)
+      if (subColor != null) {
+        rowRv.setTextColor(R.id.row_label, subColor)
+      }
       for (day in 0..6) {
         val cell = row.cells.getOrNull(day)
         val cellRv = RemoteViews(context.packageName, R.layout.week_cell)
@@ -207,5 +220,16 @@ class WeekWidgetProvider : HomeWidgetProvider() {
   private companion object {
     const val KEY_GRIDS = "week_grids"
     const val KEY_EMPTY_TEXT = "week_empty_text"
+
+    /** 表头 7 列（周一 → 周日）；onUpdate 皮肤染色与 renderGrid 共用。 */
+    val HEAD_IDS =
+        listOf(
+            R.id.week_head_mon,
+            R.id.week_head_tue,
+            R.id.week_head_wed,
+            R.id.week_head_thu,
+            R.id.week_head_fri,
+            R.id.week_head_sat,
+            R.id.week_head_sun)
   }
 }

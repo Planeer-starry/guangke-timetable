@@ -32,6 +32,8 @@ Future<void> main() async {
     themeForMigration: themeService.active.value,
   );
   WidgetService.setAccent(themeService.active.value);
+  // J9：小组件皮肤（背景 / 文字色跟随主题包，Kotlin 按 uiMode 挑亮暗套）
+  WidgetService.setSkin(themeService.active.value);
   final TimetableData data = await storage.load();
   // 启动即同步一次小组件数据（精确闹钟可用性只提示，不阻塞启动）
   unawaited(WidgetService.refreshAll(data));

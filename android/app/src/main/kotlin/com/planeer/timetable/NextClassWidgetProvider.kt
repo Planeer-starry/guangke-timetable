@@ -14,8 +14,9 @@ import es.antonborri.home_widget.HomeWidgetProvider
  * 经 home_widget 存到 `next_items` / `next_empty_text`。这里只做
  * 「按当前时间挑一条 + 拼字符串」，不碰任何课程 / 周次逻辑。
  *
- * 文字颜色全部由布局引用共享 token（values / values-night 自动切换），
- * 这里只负责文字内容与左侧色条的课程色。
+ * 文字颜色默认由布局引用共享 token（values / values-night 自动切换）；
+ * J9 皮肤在场时卡片 tint 与文字色改走皮肤，这里只负责文字内容与
+ * 左侧色条的课程色（空态色条用皮肤 / 强调色）。
  */
 class NextClassWidgetProvider : HomeWidgetProvider() {
 
@@ -26,14 +27,22 @@ class NextClassWidgetProvider : HomeWidgetProvider() {
       widgetData: SharedPreferences,
   ) {
     val now = System.currentTimeMillis()
+    // J9 皮肤：在场时卡片 tint + 文字色 + 空态色条跟随主题包
+    val skin = WidgetColors.skinOf(widgetData, context)
     // 空态色条用主题包强调色（课程色兜底也用它）
-    val accentColor = WidgetColors.accentOf(widgetData, context)
+    val accentColor = skin?.accent ?: WidgetColors.accentOf(widgetData, context)
     val items = parseItems(widgetData.getString(KEY_ITEMS, null), accentColor)
     // 键缺失（从未同步过）→ 默认「打开 App 同步课表」
     val emptyText = widgetData.getString(KEY_EMPTY_TEXT, null) ?: "打开 App 同步课表"
 
     for (appWidgetId in appWidgetIds) {
       val views = RemoteViews(context.packageName, R.layout.next_class_widget)
+      if (skin != null) {
+        WidgetColors.applyCardTint(views, R.id.next_class_root, skin.card)
+        views.setTextColor(R.id.next_header, skin.sub)
+        views.setTextColor(R.id.next_title, skin.title)
+        views.setTextColor(R.id.next_sub, skin.sub)
+      }
       val pick = items.firstOrNull { it.endMs > now }
       if (pick == null) {
         views.setTextViewText(R.id.next_title, emptyText)

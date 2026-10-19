@@ -20,8 +20,9 @@ import org.json.JSONArray
  * 按日期挑组才能跨天自动正确。
  *
  * 结构固定、内容左对齐：表头（日期 · 周次）永远显示；主体区有课逐行渲染，
- * 没课左对齐一行文案。文字颜色全部由布局引用共享 token
- * （values / values-night 自动切换），这里只填文字与色条课程色。
+ * 没课左对齐一行文案。文字颜色默认由布局引用共享 token
+ * （values / values-night 自动切换）；J9 皮肤在场时卡片 tint 与
+ * 文字色改走皮肤，这里只填文字内容与色条课程色。
  */
 class TodayWidgetProvider : HomeWidgetProvider() {
 
@@ -33,14 +34,21 @@ class TodayWidgetProvider : HomeWidgetProvider() {
   ) {
     val today = LocalDate.now().toString() // "2026-10-17"，与 Dart dateKey 对齐
     val groups = parseGroups(widgetData.getString(KEY_DAYS, null))
-    val accentColor = WidgetColors.accentOf(widgetData, context)
+    // J9 皮肤：在场时卡片 tint + 文字色跟随主题包，否则回退 res 资源
+    val skin = WidgetColors.skinOf(widgetData, context)
+    val accentColor = skin?.accent ?: WidgetColors.accentOf(widgetData, context)
 
     for (appWidgetId in appWidgetIds) {
       val views = RemoteViews(context.packageName, R.layout.today_widget)
+      if (skin != null) {
+        WidgetColors.applyCardTint(views, R.id.today_widget_root, skin.card)
+        views.setTextColor(R.id.today_header, skin.sub)
+        views.setTextColor(R.id.today_empty, skin.title)
+      }
       val group = groups.firstOrNull { it.date == today }
 
       if (group != null && group.items.isNotEmpty()) {
-        renderList(context, views, group, accentColor)
+        renderList(context, views, group, accentColor, skin?.title, skin?.sub)
       } else {
         renderEmpty(views, group, widgetData)
       }
@@ -54,6 +62,8 @@ class TodayWidgetProvider : HomeWidgetProvider() {
       views: RemoteViews,
       group: DayGroup,
       accentColor: Int,
+      titleColor: Int?,
+      subColor: Int?,
   ) {
     views.setViewVisibility(R.id.today_rows, View.VISIBLE)
     views.setViewVisibility(R.id.today_empty, View.GONE)
@@ -67,12 +77,22 @@ class TodayWidgetProvider : HomeWidgetProvider() {
       row.setTextViewText(R.id.row_title, item.title)
       row.setTextViewText(R.id.row_location, item.location)
       row.setInt(R.id.row_color, "setBackgroundColor", item.color)
+      if (titleColor != null) {
+        row.setTextColor(R.id.row_title, titleColor)
+      }
+      if (subColor != null) {
+        row.setTextColor(R.id.row_time, subColor)
+        row.setTextColor(R.id.row_location, subColor)
+      }
       views.addView(R.id.today_rows, row)
     }
     val remaining = group.items.size - shown.size
     if (remaining > 0) {
       val more = RemoteViews(context.packageName, R.layout.today_widget_more)
       more.setTextViewText(R.id.more_text, "还有 $remaining 节")
+      if (subColor != null) {
+        more.setTextColor(R.id.more_text, subColor)
+      }
       views.addView(R.id.today_rows, more)
     }
   }

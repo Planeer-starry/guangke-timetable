@@ -116,6 +116,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _onThemePackChanged() {
     final ThemePack pack = widget.themeService.active.value;
     WidgetService.setAccent(pack);
+    WidgetService.setSkin(pack);
     final bool switched = pack.id != _lastThemeId;
     _lastThemeId = pack.id;
     if (switched && pack.coursePalette != null) {
