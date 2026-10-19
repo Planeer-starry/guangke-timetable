@@ -30,6 +30,16 @@ class PalettePack {
   /// 是否内置包（不可删除）。
   final bool builtin;
 
+  /// 复制并替换部分字段（J8 管理页重命名用，只改 name）。
+  PalettePack copyWith({String? name}) {
+    return PalettePack(
+      id: id,
+      name: name ?? this.name,
+      colors: colors,
+      builtin: builtin,
+    );
+  }
+
   /// 内置 3 套。default 直接复用 course_color.dart 的默认调色板
   /// （同一份常量，不复制）；莫兰迪 / 秋日的颜色已核算过白字对比度
   /// （最低 4.16:1，见 test/palette_contrast_test.dart 闸门），**不要自行调整**。

@@ -12,6 +12,7 @@ import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/models/update_info.dart';
 import 'package:timetable/screens/import_flow.dart';
+import 'package:timetable/screens/pack_manager_screen.dart';
 import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/services/settings_service.dart';
@@ -70,6 +71,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   /// 是否存在导入快照（「恢复导入的原始课表」入口的显隐依据）。
   bool _hasImportedSnapshot = false;
 
+  /// 上一次看到的主题包 id。
+  ///
+  /// 用来区分「切换主题」与「同一主题的数据更新」（如重命名），
+  /// 只有 id 真变了才注入该主题自带的课程配色。
+  String? _lastThemeId;
+
   /// 主题模式的显示文案（存储值 → 中文）。
   static const Map<String, String> _themeModeLabels = <String, String>{
     'system': '跟随系统',
@@ -80,6 +87,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
+    _lastThemeId = widget.themeService.active.value.id;
     widget.themeService.active.addListener(_onThemePackChanged);
     widget.paletteService.active.addListener(_onPaletteChanged);
     _loadPackageInfo();
@@ -93,16 +101,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  /// 主题包变化（面板点选 / 导入 / 删除回退都会走到）：
+  /// 主题包变化（面板点选 / 导入 / 删除回退 / **重命名** 都会走到）：
   /// - 同步小组件强调色；
-  /// - 带课程配色：经 [PaletteService.applyFromTheme] 注入临时包，
-  ///   重取色由 [_onPaletteChanged] 对 active 的监听统一处理；
+  /// - 只有**真正切换**到另一个主题包时，才经 [PaletteService.applyFromTheme]
+  ///   注入该主题自带的课程配色（重取名由 [_onPaletteChanged] 统一处理）；
   /// - 不带课程配色：完全不碰调色板（J7「配色与主题包解绑」语义），
   ///   只让小组件高亮跟上。
+  ///
+  /// ⚠️ 必须区分「切换主题」与「同一主题的数据更新」（重命名）：
+  /// 重命名只改 name，seedColor / coursePalette 都没变。若也走
+  /// applyFromTheme，用户自选的课程配色会被主题包配色冲掉，而重启后
+  /// PaletteService._restore 又按 palette_id 恢复自选配色 ——
+  /// 表现为「改个名字，配色变了，重启又变回来」。
   void _onThemePackChanged() {
     final ThemePack pack = widget.themeService.active.value;
     WidgetService.setAccent(pack);
-    if (pack.coursePalette != null) {
+    final bool switched = pack.id != _lastThemeId;
+    _lastThemeId = pack.id;
+    if (switched && pack.coursePalette != null) {
       widget.paletteService.applyFromTheme(pack);
       return;
     }
@@ -573,6 +589,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
               context,
               service: widget.paletteService,
               onImport: _importPalettePack,
+            ),
+          ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.style),
+          title: const Text('管理主题与配色'),
+          subtitle: const Text('重命名 / 复制 JSON / 删除'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.of(context).push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => PackManagerScreen(
+                themeService: widget.themeService,
+                paletteService: widget.paletteService,
+              ),
             ),
           ),
         ),

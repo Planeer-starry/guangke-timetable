@@ -178,5 +178,58 @@ void main() {
       expect(service.imported.value, hasLength(1));
       expect(service.imported.value.single.name, '好的');
     });
+
+    group('rename', () {
+      test('重命名导入包 -> name 变、id 不变、持久化', () async {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final ThemeService service = ThemeService(prefs);
+        final ImportOutcome outcome = await service.importFromJson(
+          '{"id":"night","name":"夜色","seedColor":"#112233"}',
+        );
+        await service.rename(outcome.pack!, '夜色2');
+        expect(service.imported.value.single.name, '夜色2');
+        expect(service.imported.value.single.id, 'night');
+        expect(service.imported.value.single.seedColor, 0xFF112233);
+
+        final ThemeService restored = ThemeService(prefs);
+        expect(restored.imported.value.single.name, '夜色2');
+      });
+
+      test('重命名正在用的包 -> active.name 同步变化', () async {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final ThemeService service = ThemeService(prefs);
+        final ImportOutcome outcome = await service.importFromJson(
+          '{"id":"night","name":"夜色","seedColor":"#112233"}',
+        );
+        // importFromJson 成功即选中，此刻 active 就是它
+        await service.rename(outcome.pack!, '夜色2');
+        expect(service.active.value.id, 'night');
+        expect(service.active.value.name, '夜色2');
+        expect(service.active.value.seedColor, 0xFF112233);
+      });
+
+      test('空白新名 -> 直接 return 无变化', () async {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final ThemeService service = ThemeService(prefs);
+        final ImportOutcome outcome = await service.importFromJson(
+          '{"id":"night","name":"夜色","seedColor":"#112233"}',
+        );
+        await service.rename(outcome.pack!, '   ');
+        expect(service.imported.value.single.name, '夜色');
+        expect(service.active.value.name, '夜色');
+
+        final ThemeService restored = ThemeService(prefs);
+        expect(restored.imported.value.single.name, '夜色');
+      });
+
+      test('rename 内置包 -> 直接 return 无变化', () async {
+        final SharedPreferences prefs = await SharedPreferences.getInstance();
+        final ThemeService service = ThemeService(prefs);
+        await service.rename(ThemePack.builtins.first, '假靛蓝');
+        expect(service.imported.value, isEmpty);
+        expect(service.active.value.name, '靛蓝');
+        expect(ThemePack.builtins.first.name, '靛蓝');
+      });
+    });
   });
 }

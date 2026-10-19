@@ -124,6 +124,26 @@ class ThemeService {
     }
   }
 
+  /// 重命名导入的包（只改 name，id 不变）。内置包不可改，直接 return；
+  /// 新名 trim 后为空同样直接 return。
+  ///
+  /// 改名后若它正是 active，同步更新 active（name 变了 → 值语义 != 旧对象，
+  /// ValueNotifier 会正常通知界面刷新）。
+  Future<void> rename(ThemePack pack, String newName) async {
+    final String name = newName.trim();
+    if (name.isEmpty || pack.builtin) {
+      return;
+    }
+    final List<ThemePack> next = <ThemePack>[
+      for (final ThemePack old in imported.value)
+        old.id == pack.id ? old.copyWith(name: name) : old,
+    ];
+    await _persistImported(next);
+    if (active.value.id == pack.id) {
+      active.value = pack.copyWith(name: name);
+    }
+  }
+
   Future<void> _persistImported(List<ThemePack> packs) async {
     imported.value = packs;
     await _prefs.setString(

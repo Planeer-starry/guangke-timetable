@@ -40,6 +40,18 @@ class ThemePack {
   /// 是否内置包（不可删除）。
   final bool builtin;
 
+  /// 复制并替换部分字段（J8 管理页重命名用，只改 name）。
+  ThemePack copyWith({String? name}) {
+    return ThemePack(
+      id: id,
+      name: name ?? this.name,
+      seedColor: seedColor,
+      coursePalette: coursePalette,
+      widgetAccent: widgetAccent,
+      builtin: builtin,
+    );
+  }
+
   /// 内置 6 套。种子色取自课程调色板的雅致色，与课表观感统一；
   /// 都不带 coursePalette（用默认 16 色），widgetAccent 也为 null。
   static List<ThemePack> get builtins => const <ThemePack>[

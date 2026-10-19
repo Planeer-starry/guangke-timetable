@@ -220,6 +220,60 @@ void main() {
     });
   });
 
+  group('rename', () {
+    test('重命名导入包 -> name 变、id 不变、持久化', () async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final PaletteService service = PaletteService(prefs);
+      final PaletteImportOutcome outcome = await service.importFromJson(
+        '{"id":"pc","name":"我的配色","colors":$_custom8Json}',
+      );
+      await service.rename(outcome.pack!, '新配色');
+      expect(service.imported.value.single.name, '新配色');
+      expect(service.imported.value.single.id, 'pc');
+      expect(service.imported.value.single.colors, outcome.pack!.colors);
+
+      final PaletteService restored = PaletteService(prefs);
+      expect(restored.imported.value.single.name, '新配色');
+    });
+
+    test('重命名正在用的包 -> active.name 同步变化、调色板不变', () async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final PaletteService service = PaletteService(prefs);
+      final PaletteImportOutcome outcome = await service.importFromJson(
+        '{"id":"pc","name":"我的配色","colors":$_custom8Json}',
+      );
+      // importFromJson 成功即选中，此刻 active 就是它
+      await service.rename(outcome.pack!, '新配色');
+      expect(service.active.value.id, 'pc');
+      expect(service.active.value.name, '新配色');
+      expect(service.active.value.colors, outcome.pack!.colors);
+      expect(activeCoursePalette, outcome.pack!.colors);
+    });
+
+    test('空白新名 -> 直接 return 无变化', () async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final PaletteService service = PaletteService(prefs);
+      final PaletteImportOutcome outcome = await service.importFromJson(
+        '{"id":"pc","name":"我的配色","colors":$_custom8Json}',
+      );
+      await service.rename(outcome.pack!, '   ');
+      expect(service.imported.value.single.name, '我的配色');
+      expect(service.active.value.name, '我的配色');
+
+      final PaletteService restored = PaletteService(prefs);
+      expect(restored.imported.value.single.name, '我的配色');
+    });
+
+    test('rename 内置包 -> 直接 return 无变化', () async {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final PaletteService service = PaletteService(prefs);
+      await service.rename(PalettePack.builtins.first, '假默认');
+      expect(service.imported.value, isEmpty);
+      expect(service.active.value.name, '默认');
+      expect(PalettePack.builtins.first.name, '默认');
+    });
+  });
+
   group('损坏数据防御', () {
     test('预置损坏的 palette_packs -> 不抛、imported 为空', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
@@ -430,8 +484,7 @@ void main() {
       );
     });
 
-    test('applyFromTheme -> 监听器触发时 activeCoursePalette 已是主题配色',
-        () async {
+    test('applyFromTheme -> 监听器触发时 activeCoursePalette 已是主题配色', () async {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final PaletteService service = PaletteService(prefs);
       final List<int> themeColors = <int>[

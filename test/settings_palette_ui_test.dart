@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -5,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:timetable/models/palette_pack.dart';
 import 'package:timetable/models/theme_pack.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/screens/settings_screen.dart';
@@ -43,8 +45,9 @@ Future<SharedPreferences> _newPrefs() async {
 Future<void> pumpSettings(
   WidgetTester tester,
   SharedPreferences prefs,
-  PaletteService paletteService,
-) async {
+  PaletteService paletteService, {
+  ThemeService? themeService,
+}) async {
   PackageInfo.setMockInitialValues(
     appName: '简课表',
     packageName: 'com.planeer.timetable',
@@ -53,7 +56,7 @@ Future<void> pumpSettings(
     buildSignature: '',
   );
   final SettingsService settings = SettingsService(prefs);
-  final ThemeService themeService = ThemeService(prefs);
+  final ThemeService resolvedTheme = themeService ?? ThemeService(prefs);
   // ⚠️ testWidgets 跑在 fake async zone 里：真实文件 I/O 的 Future 永远不会完成，
   // 必须用 tester.runAsync 包起来（同 settings_tablet_test，踩过的坑）。
   final Directory tmp = (await tester.runAsync(
@@ -66,7 +69,7 @@ Future<void> pumpSettings(
         data: ValueNotifier<TimetableData>(_configuredData()),
         storage: storage,
         settings: settings,
-        themeService: themeService,
+        themeService: resolvedTheme,
         paletteService: paletteService,
         undoStack: UndoStack(),
         initialUpdate: null,
@@ -125,6 +128,51 @@ void main() {
 
     expect(find.text('课程配色'), findsOneWidget);
     expect(find.text('来自主题包'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('重命名正在使用的主题包 -> 用户自选的课程配色不被注入覆盖',
+      (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.reset);
+
+    final SharedPreferences prefs = await _newPrefs();
+
+    // 用户自选「莫兰迪」（palette_id = morandi）
+    final PaletteService paletteService = PaletteService(prefs);
+    await paletteService.select(PalettePack.builtins[1]);
+    expect(paletteService.active.value.id, 'morandi');
+
+    // 另有一个带课程配色的主题包，且它是当前激活的主题
+    final ThemeService themeService = ThemeService(prefs);
+    final ThemePack theme = ThemePack(
+      id: 'ye',
+      name: '夜色',
+      seedColor: 0xFF112233,
+      coursePalette: <int>[
+        0xFFC05B5B, 0xFFB8528C, 0xFF8E55A8, 0xFF5A68B0,
+        0xFF4278B5, 0xFF328CAE, 0xFF2C9186, 0xFF3E8A55,
+      ],
+    );
+    await themeService.importFromJson(jsonEncode(theme.toJson()));
+    expect(themeService.active.value.id, 'ye');
+
+    await pumpSettings(tester, prefs, paletteService, themeService: themeService);
+    // initState 把 _lastThemeId 初始化为当前主题，之后同一 id 的变化
+    // 视为「数据更新」而不是「切换主题」
+
+    // 重命名（只改 name，seedColor / coursePalette 不变）
+    await themeService.rename(themeService.active.value, '夜色改名');
+    await tester.pumpAndSettle();
+    expect(themeService.active.value.name, '夜色改名');
+
+    // 关键断言：调色板仍是用户自选的莫兰迪，没被主题包配色冲掉
+    expect(
+      paletteService.active.value.id,
+      'morandi',
+      reason: '重命名不该触发 applyFromTheme（J8 边界 bug）',
+    );
     expect(tester.takeException(), isNull);
   });
 }

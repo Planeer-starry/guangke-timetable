@@ -10,19 +10,23 @@ import 'package:timetable/models/palette_pack.dart';
 import 'package:timetable/services/palette_service.dart';
 import 'package:timetable/widgets/course_sheet_parts.dart';
 
-/// 单个配色预览色块（22dp 方形、圆角 6）。
+/// 单个配色预览色块（默认 22dp 方形、圆角 6）。
 ///
-/// 公开成独立 widget 供测试计数（每行最多 6 个）。
+/// 公开成独立 widget 供测试计数（每行最多 6 个）；
+/// J8 管理页复用时用 [size] 缩到 16dp。
 class PaletteSwatch extends StatelessWidget {
-  const PaletteSwatch({super.key, required this.color});
+  const PaletteSwatch({super.key, required this.color, this.size = 22});
 
   final int color;
+
+  /// 色块边长（dp）。
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 22,
-      height: 22,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         color: Color(color),
         borderRadius: BorderRadius.circular(6),
@@ -34,22 +38,25 @@ class PaletteSwatch extends StatelessWidget {
 /// 一排配色预览（前 6 个颜色横向排列，间隔 4dp）。
 ///
 /// 配色包的核心信息是「一排颜色」，必须让人一眼看出多色分布——
-/// 不用单个圆形色块。宽度固定（6×22 + 5×4），不足 6 色时右侧留空。
+/// 不用单个圆形色块。宽度固定（6×size + 5×4），不足 6 色时右侧留空。
 class PaletteSwatches extends StatelessWidget {
-  const PaletteSwatches({super.key, required this.colors});
+  const PaletteSwatches({super.key, required this.colors, this.size = 22});
 
   final List<int> colors;
+
+  /// 单个色块边长（dp），决定整排宽度。
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     final List<int> shown = colors.take(6).toList(growable: false);
     return SizedBox(
-      width: 6 * 22 + 5 * 4,
+      width: 6 * size + 5 * 4,
       child: Row(
         children: <Widget>[
           for (int i = 0; i < shown.length; i++) ...<Widget>[
             if (i > 0) const SizedBox(width: 4),
-            PaletteSwatch(color: shown[i]),
+            PaletteSwatch(color: shown[i], size: size),
           ],
         ],
       ),
@@ -185,7 +192,8 @@ class PalettePackSheet extends StatelessWidget {
           ? check
           : Row(
               mainAxisSize: MainAxisSize.min,
-              children: <Widget>[?check,
+              children: <Widget>[
+                ?check,
                 IconButton(
                   icon: const Icon(Icons.delete_outline),
                   tooltip: '删除配色',
