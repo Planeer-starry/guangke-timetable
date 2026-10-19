@@ -25,6 +25,12 @@ Future<void> pumpEditScreen(
   TimetableData data,
   void Function(TimetableData?) onPopped,
 ) async {
+  // 编辑页改成「基本信息 / 时间 / 周次」三张卡片后内容变高，
+  // 默认 800×600 视口放不下会让部分按钮滚出屏幕、tap 落空。
+  // 这里统一给一个足够高的视口，让测试聚焦在行为而不是滚动手势上。
+  tester.view.physicalSize = const Size(800, 1400);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(tester.view.reset);
   await tester.pumpWidget(
     MaterialApp(
       home: Builder(
@@ -70,10 +76,15 @@ void main() {
 
     // 填上课程名（否则先卡名称校验），再清空周次
     await tester.enterText(find.byType(TextFormField).first, '高等数学');
+    // 编辑页改为卡片分组后内容变高，「清空」会滚出测试视口（默认 800×600）；
+    // 先滚到可见再点，否则 tap 落空
+    await tester.ensureVisible(find.text('清空'));
+    await tester.pump();
     await tester.tap(find.text('清空'));
     await tester.pump();
     await tester.tap(find.text('保存'));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('请至少选择一个周次'), findsOneWidget);
     expect(find.text('打开编辑页'), findsNothing);

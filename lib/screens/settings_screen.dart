@@ -12,6 +12,7 @@ import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/breakpoints.dart';
+import 'package:timetable/widgets/app_card.dart';
 import 'package:timetable/widgets/update_section.dart';
 
 /// 设置页：学期 / 外观 / 课表 / 关于 / 更新。
@@ -236,6 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: appPageBackground(Theme.of(context).colorScheme),
       appBar: AppBar(title: const Text('设置')),
       // expanded（平板）走双栏卡片；compact / medium 保持单列列表。
       // 断点只在这里读一次；两个分支复用同一批 _buildXxxContent，
@@ -320,12 +322,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget _card(BuildContext context, Widget child) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     return Card(
-      elevation: 0,
-      color: colors.surfaceContainerHigh,
+      elevation: colors.brightness == Brightness.light ? 1 : 0,
+      shadowColor: Colors.black.withValues(alpha: 0.06),
+      color: appCardColor(colors),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
         side: BorderSide(
-          color: colors.outlineVariant.withValues(alpha: 0.6),
+          color: colors.outlineVariant.withValues(alpha: 0.5),
           width: 1,
         ),
       ),

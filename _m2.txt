@@ -1,0 +1,36 @@
+feat(ui): 编辑课程页卡片化；抽出 AppCard 统一卡片与配色
+
+【编辑页改造】course_edit_screen.dart 377 -> 466 行
+- 限宽 720 居中：平板上表单不再拉满 848dp（输入框被拉得极宽、
+  20 个周次标签散开占满整行），手机 < 720 自然铺满，一份代码两种形态
+- 三张卡片分组：基本信息 / 时间 / 周次
+- 输入框改用 OutlineInputBorder 轮廓框（原为默认下划线）
+- 节次选择旁实时显示时间范围（「08:30-09:15」）——
+  原来选完看不到几点上课；时间从 data.periods 实时算，
+  别的学校的作息也能正确显示
+- 周次快捷按钮 TextButton -> OutlinedButton（原来像文字链接，不像按钮）
+- 周次为空时页面上直接红字提示（原来点保存才提示）
+- 冲突提示颜色从硬编码 Colors.amber.shade100 改为主题 tertiaryContainer
+  （硬编码在深色模式下会变成刺眼浅黄底 + 深色字）
+
+【新组件】lib/widgets/app_card.dart
+- AppCard：分组卡片（亮色纯白 / 暗色高容器色 + 1dp 描边 + 16dp 圆角）
+- AppFieldLabel：卡片内小节标签
+- appCardColor / appPageBackground：亮暗各自的配色策略
+
+【配色：解决「整页发灰」】
+原来页面和卡片都是浅灰（surface on surfaceContainerHigh），
+编辑页三张卡片占满屏幕后整页糊成一片灰、没有层次。改为：
+    亮色：页面 surfaceContainerLow（淡灰）+ 卡片 surfaceContainerLowest（纯白）+ 轻投影
+    暗色：页面沿用主题默认 + 卡片 surfaceContainerHigh（比背景亮一档）
+深色不能照搬：surfaceContainerLowest 在暗色里是纯黑，比背景还暗、边界会消失；
+白色卡片又会刺眼。所以按亮度反转，阴影也只加在亮色。
+
+设置页的 _card 与 Scaffold 背景同步这套配色，两个页面风格统一。
+
+【测试】test/course_edit_screen_test.dart
+编辑页变高后默认 800×600 视口放不下，「清空」按钮滚出屏幕导致 tap 落空。
+给 pumpEditScreen 统一设 1400 高视口，让测试聚焦行为而非滚动手势。
+
+验证：analyze 无 issue，268 测试全绿；
+真机浅色/深色截图确认（编辑页与设置页均：白卡片浮在淡灰页、暗色边界清晰）。
