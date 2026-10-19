@@ -1,4 +1,5 @@
 import 'package:home_widget/home_widget.dart';
+import 'package:timetable/models/theme_pack.dart';
 import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/utils/next_class.dart';
 import 'package:timetable/utils/today_classes.dart';
@@ -29,6 +30,20 @@ class WidgetService {
   static const String _keyTodayEmptyText = 'today_empty_text';
   static const String _keyWeekGrids = 'week_grids';
   static const String _keyWeekEmptyText = 'week_empty_text';
+  static const String _keyAccent = 'widget_accent';
+
+  /// 当前小组件强调色（ARGB int）；null = 从未设置过主题包
+  /// （写空串，Kotlin 侧 toLongOrNull 得 null 回退资源色）。
+  ///
+  /// 由 main 启动 + 设置页主题切换时 [setAccent] 更新（J6）。
+  /// ⚠️ 卡片背景色 / 文字色**不**跟随主题包：RemoteViews 无法设置
+  /// 程序化创建的圆角 Drawable，改纯色会丢圆角；文字跟着变有对比度风险。
+  static int? _accentValue;
+
+  /// 按主题包设置小组件强调色（`widgetAccent ?? seedColor`）。
+  static void setAccent(ThemePack pack) {
+    _accentValue = pack.widgetAccent ?? pack.seedColor;
+  }
 
   /// 重新计算候选并同步「下节课」小组件。
   ///
@@ -96,6 +111,12 @@ class WidgetService {
     DateTime? now,
     bool schedule = true,
   }) async {
+    // 主题包强调色（与课程色同套路：ARGB int 的十进制字符串，
+    // Kotlin 侧 toLongOrNull 再 toInt 还原 32 位位模式）
+    await HomeWidget.saveWidgetData<String>(
+      _keyAccent,
+      _accentValue?.toString() ?? '',
+    );
     await refreshNextClass(data, now: now, schedule: schedule);
     await refreshToday(data, now: now, schedule: schedule);
     await refreshWeek(data, now: now, schedule: schedule);

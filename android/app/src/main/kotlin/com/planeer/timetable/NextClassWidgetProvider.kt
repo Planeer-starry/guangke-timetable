@@ -4,7 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.SharedPreferences
 import android.widget.RemoteViews
-import androidx.core.content.ContextCompat
+
 import es.antonborri.home_widget.HomeWidgetProvider
 
 /**
@@ -26,8 +26,8 @@ class NextClassWidgetProvider : HomeWidgetProvider() {
       widgetData: SharedPreferences,
   ) {
     val now = System.currentTimeMillis()
-    // 空态色条用共享强调色（课程色兜底也用它）
-    val accentColor = ContextCompat.getColor(context, R.color.widget_accent)
+    // 空态色条用主题包强调色（课程色兜底也用它）
+    val accentColor = WidgetColors.accentOf(widgetData, context)
     val items = parseItems(widgetData.getString(KEY_ITEMS, null), accentColor)
     // 键缺失（从未同步过）→ 默认「打开 App 同步课表」
     val emptyText = widgetData.getString(KEY_EMPTY_TEXT, null) ?: "打开 App 同步课表"

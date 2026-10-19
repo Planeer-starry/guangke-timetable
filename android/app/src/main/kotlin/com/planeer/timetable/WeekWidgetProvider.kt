@@ -41,7 +41,7 @@ class WeekWidgetProvider : HomeWidgetProvider() {
       start != null && !today.isBefore(start) && today.isBefore(start.plusDays(7))
     }
     val emptyColor = ContextCompat.getColor(context, R.color.widget_grid_empty)
-    val accentColor = ContextCompat.getColor(context, R.color.widget_accent)
+    val accentColor = WidgetColors.accentOf(widgetData, context)
     // 今天列的高亮：accent 的半透明版本
     val highlightColor = (accentColor and 0x00FFFFFF) or (0x33 shl 24)
 

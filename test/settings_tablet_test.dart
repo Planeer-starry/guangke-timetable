@@ -8,6 +8,7 @@ import 'package:timetable/models/timetable_data.dart';
 import 'package:timetable/screens/settings_screen.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/theme_service.dart';
 import 'package:timetable/services/undo_stack.dart';
 
 /// 「学期已配置」的最小课表（meta 三件套齐）。
@@ -41,9 +42,10 @@ Future<void> pumpSettings(WidgetTester tester) async {
     buildSignature: '',
   );
   SharedPreferences.setMockInitialValues(<String, Object>{});
-  final SettingsService settings = SettingsService(
-    await SharedPreferences.getInstance(),
-  );
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  final SettingsService settings = SettingsService(prefs);
+  // J6：SettingsScreen 新增 required themeService（主题包入口用）
+  final ThemeService themeService = ThemeService(prefs);
   // ⚠️ testWidgets 跑在 fake async zone 里：真实文件 I/O 的 Future 永远不会完成，
   // 必须用 tester.runAsync 包起来，否则整条测试会静默挂死（同 home_swipe_week_test，
   // 这个坑已经踩过一次，见那里的注释）。
@@ -57,6 +59,7 @@ Future<void> pumpSettings(WidgetTester tester) async {
         data: ValueNotifier<TimetableData>(_configuredData()),
         storage: storage,
         settings: settings,
+        themeService: themeService,
         undoStack: UndoStack(),
         initialUpdate: null,
       ),

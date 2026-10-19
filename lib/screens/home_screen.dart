@@ -13,6 +13,7 @@ import 'package:timetable/screens/settings_screen.dart';
 import 'package:timetable/services/course_editor.dart';
 import 'package:timetable/services/settings_service.dart';
 import 'package:timetable/services/storage_service.dart';
+import 'package:timetable/services/theme_service.dart';
 import 'package:timetable/services/undo_stack.dart';
 import 'package:timetable/services/update_service.dart';
 import 'package:timetable/services/widget_service.dart';
@@ -37,11 +38,15 @@ class HomeScreen extends StatefulWidget {
     required this.initialData,
     required this.storage,
     required this.settings,
+    required this.themeService,
   });
 
   final TimetableData initialData;
   final StorageService storage;
   final SettingsService settings;
+
+  /// 主题包服务（J6）：透传给设置页（主题包入口 / 重新取色）。
+  final ThemeService themeService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -157,6 +162,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           data: _data,
           storage: widget.storage,
           settings: widget.settings,
+          themeService: widget.themeService,
           undoStack: _undoStack,
           initialUpdate: _updateInfo.value,
         ),

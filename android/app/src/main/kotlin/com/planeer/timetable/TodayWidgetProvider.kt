@@ -5,7 +5,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.view.View
 import android.widget.RemoteViews
-import androidx.core.content.ContextCompat
+
 import es.antonborri.home_widget.HomeWidgetProvider
 import java.time.LocalDate
 import org.json.JSONArray
@@ -33,7 +33,7 @@ class TodayWidgetProvider : HomeWidgetProvider() {
   ) {
     val today = LocalDate.now().toString() // "2026-10-17"，与 Dart dateKey 对齐
     val groups = parseGroups(widgetData.getString(KEY_DAYS, null))
-    val accentColor = ContextCompat.getColor(context, R.color.widget_accent)
+    val accentColor = WidgetColors.accentOf(widgetData, context)
 
     for (appWidgetId in appWidgetIds) {
       val views = RemoteViews(context.packageName, R.layout.today_widget)
