@@ -140,7 +140,43 @@ class _ImportFlow {
       return;
     }
     if (!result.isSuccessful) {
-      _snack(result.error ?? '未识别到任何课程，请检查文件内容');
+      // 空表/无法识别：SnackBar 装不下多行建议，改用 AlertDialog
+      if (!context.mounted) {
+        return;
+      }
+      await showDialog<void>(
+        context: context,
+        builder: (BuildContext dialogContext) => AlertDialog(
+          title: const Text('这个表格格式暂时无法识别'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              // 保留解析器的具体原因（「未找到表头」/「未识别到课程」），
+              // 用户报 Issue 时能直接说明，也便于区分「选错文件」和「格式不支持」
+              if (result.error != null) ...<Widget>[
+                Text(
+                  result.error!,
+                  style: TextStyle(
+                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
+              const Text('① 先导入后手动添加课程（AppBar「+」）'),
+              const SizedBox(height: 8),
+              const Text('② 把表格发到 GitHub Issue 附上学校名，我们适配'),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('知道了'),
+            ),
+          ],
+        ),
+      );
       return;
     }
     if (!context.mounted) {
@@ -255,7 +291,9 @@ class _ImportFlow {
   /// - overrides 按 course.id 引用，而导入的课程 id 全新（c_xxx / jw_xxx），
   ///   旧 overrides 必然失效，必须同时清空；
   /// - 教务 Excel 导入若识别到学期三件套，则连同 meta 一起写入
-  ///   （week1Monday / totalWeeks / semesterName），用户不用再手动设学期。
+  ///   （week1Monday / totalWeeks / semesterName），用户不用再手动设学期；
+  /// - 作息**绝不缩水**：教务 Excel 从节次列识别出非空 periods 才写入，
+  ///   否则沿用现有（[TimetableData.fromJson] 已保证现有 periods 非空）。
   Future<void> _applyImported(ImportConfirmation confirmed) async {
     final TimetableData current = data.value;
     final TimetableMeta meta =
@@ -267,10 +305,13 @@ class _ImportFlow {
             totalWeeks: confirmed.totalWeeks!,
           )
         : current.meta;
+    final List<Period> periods = (confirmed.periods?.isNotEmpty ?? false)
+        ? confirmed.periods!
+        : current.periods;
     final TimetableData updated = TimetableData(
       schema: current.schema,
       meta: meta,
-      periods: Period.defaults,
+      periods: periods,
       courses: confirmed.courses,
       overrides: const <CourseOverride>[],
     );
