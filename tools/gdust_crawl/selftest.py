@@ -5,6 +5,7 @@
 接口本身无法验证（需要真实账号），这里只覆盖纯逻辑。
 """
 
+import datetime
 import sys
 import os
 
@@ -13,12 +14,15 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from crawl import (  # noqa: E402
     aggregate,
     apply_single_double,
+    build_meta,
     collect_courses,
     detect_week_param,
     normalize_sections,
     parse_entry_weeks,
+    parse_start_date,
     parse_weeks,
     replace_query_param,
+    semester_name_of,
 )
 
 failures = []
@@ -202,6 +206,50 @@ b = {'courseName': 'B', 'teacher': '', 'classroomName': '', 'dayWeek': 1,
      'whichSection': '3-3', '_weeks': {1}, '_singleDouble': ''}
 agg4 = aggregate([(1, a), (1, b)])
 check('排序（周一在前）', [e['courseName'] for e in agg4['1']], ['B', 'A'])
+
+print()
+print('=== 15. semester_name_of（学期名推导，J11）===')
+check('8 月开始', semester_name_of('2026-08-31'), '2026-2027年第1学期')
+check('9 月开始', semester_name_of('2026-09-07'), '2026-2027年第1学期')
+check('2 月开始', semester_name_of('2027-02-23'), '2026-2027年第2学期')
+check('7 月开始', semester_name_of('2027-07-05'), '2026-2027年第2学期')
+check('date 对象', semester_name_of(datetime.date(2026, 9, 7)), '2026-2027年第1学期')
+check('None', semester_name_of(None), '')
+check('乱串', semester_name_of('不是日期'), '')
+
+print()
+print('=== 16. parse_start_date（startTime 解析）===')
+check('ISO', parse_start_date('2026-09-07'), datetime.date(2026, 9, 7))
+check('带时间', parse_start_date('2026-09-07 00:00:00'), datetime.date(2026, 9, 7))
+check('斜杠', parse_start_date('2026/9/7'), datetime.date(2026, 9, 7))
+check('中文', parse_start_date('2026年9月7日'), datetime.date(2026, 9, 7))
+check('None', parse_start_date(None), None)
+check('空串', parse_start_date(''), None)
+check('月份越界', parse_start_date('2026-13-40'), None)
+
+print()
+print('=== 17. build_meta（顶层 meta 构建，J11）===')
+full = build_meta('2026-09-07', 20)
+check('完整字段集', sorted(full.keys()),
+      ['school', 'semesterName', 'totalWeeks', 'week1Monday'])
+check('week1Monday', full['week1Monday'], '2026-09-07')
+check('semesterName', full['semesterName'], '2026-2027年第1学期')
+check('totalWeeks', full['totalWeeks'], 20)
+check('school', full['school'], '广东科技学院')
+# 周三开始 → 归一到同一周的周一
+check('非周一开始归一', build_meta('2026-09-09', 20)['week1Monday'], '2026-09-07')
+# 只有周数、没有开始日 → 只带 school + totalWeeks
+only_weeks = build_meta(None, 20)
+check('只有周数的键', sorted(only_weeks.keys()), ['school', 'totalWeeks'])
+check('只有周数的值', only_weeks['totalWeeks'], 20)
+# 只有开始日、周数缺失 → 不写 totalWeeks，也不用默认 20 编造
+only_start = build_meta('2026-09-07', None)
+check('只有开始日的键', sorted(only_start.keys()),
+      ['school', 'semesterName', 'week1Monday'])
+check('只有开始日无 totalWeeks', 'totalWeeks' in only_start, False)
+# 什么都拿不到 → 整个省略
+check('全空返回 None', build_meta(None, None), None)
+check('周数无效返回 None', build_meta(None, 0), None)
 
 print()
 if failures:

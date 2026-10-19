@@ -37,7 +37,8 @@
 三、导入
 
   把生成的 课表.json 传到手机，App → 设置 → 导入课表 → 从文件导入（.json）
-  ⚠️ 导入后需要手动设置「第一周周一」（JSON 格式不含学期元信息）
+  ⚠️ 导入后需要手动设置「第一周周一」（本脚本不访问日历接口，输出不含
+     学期元信息；gui.py 生成的文件自带 meta，导入时自动填写学期）
 
 ================================ 输出格式 ================================
 
@@ -61,6 +62,7 @@ App 的 JSON 导入格式（按周展开）：
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import random
 import re
@@ -370,6 +372,72 @@ def replace_query_param(url: str, name: str, value: int) -> str:
     if not replaced:
         parts.append(f'{name}={value}')
     return f'{base}?{"&".join(parts)}'
+
+
+# ───────────────────────── 学期元信息（J11） ─────────────────────────
+
+def parse_start_date(raw) -> datetime.date | None:
+    """把日历接口的 startTime 尽力解析成日期；失败返回 None。
+
+    支持 date/datetime 对象、ISO 字符串（含带时间后缀）、
+    YYYY/M/D、YYYY年M月D日 等写法。
+    """
+    if isinstance(raw, datetime.datetime):
+        return raw.date()
+    if isinstance(raw, datetime.date):
+        return raw
+    text = _text(raw)
+    if not text:
+        return None
+    match = re.search(r'(\d{4})[-/年.](\d{1,2})[-/月.](\d{1,2})', text)
+    if not match:
+        return None
+    try:
+        return datetime.date(
+            int(match.group(1)), int(match.group(2)), int(match.group(3))
+        )
+    except ValueError:  # 月份/日期越界（如 2026-13-40）
+        return None
+
+
+def semester_name_of(start_date) -> str:
+    """从学期开始日推导学期名，如 "2026-2027年第1学期"。
+
+    学年：8 月及以后开始 → 当年-次年（2026-08 → 2026-2027）；
+          1~7 月开始 → 上一年-当年（2027-02 → 2026-2027）。
+    学期：8~12 月开始 → 第 1 学期；1~7 月开始 → 第 2 学期。
+    推导不出（没有可用日期）返回空串。
+    """
+    date = parse_start_date(start_date)
+    if date is None:
+        return ''
+    if date.month >= 8:
+        return f'{date.year}-{date.year + 1}年第1学期'
+    return f'{date.year - 1}-{date.year}年第2学期'
+
+
+def build_meta(start_time, total_weeks, school: str = '广东科技学院') -> dict | None:
+    """从日历接口数据构建 App 导入 JSON 的顶层 meta；拿不到的绝不编造。
+
+    - week1Monday：startTime 解析成日期后归一到所在周的周一（YYYY-MM-DD）；
+    - semesterName：由学期开始日推导（best-effort，推不出就不写）；
+    - totalWeeks：allWeek 能转成正整数才写（调用方回退用的默认值不算数）；
+    - week1Monday 与 totalWeeks 一个都凑不出来时返回 None（整个 meta 省略）。
+    """
+    start = parse_start_date(start_time)
+    weeks = _to_int(total_weeks)
+    if start is None and not (weeks and weeks > 0):
+        return None
+    meta: dict = {'school': school}
+    if start is not None:
+        monday = start - datetime.timedelta(days=start.weekday())
+        meta['week1Monday'] = monday.isoformat()
+        name = semester_name_of(start)
+        if name:
+            meta['semesterName'] = name
+    if weeks and weeks > 0:
+        meta['totalWeeks'] = weeks
+    return meta
 
 
 def fetch(url: str, cookie: str, timeout: int = 20) -> tuple[str, int]:

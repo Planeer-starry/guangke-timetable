@@ -83,7 +83,7 @@ class _ImportFlow {
             SheetActionRow(
               icon: Icons.folder_open,
               title: '从文件导入',
-              subtitle: '.json · App 导出或爬虫生成的文件',
+              subtitle: '.json · 简课表备份，或教务 / 爬虫生成的文件',
               onTap: () => Navigator.of(sheetContext).pop('file'),
             ),
             SheetActionRow(
@@ -276,7 +276,10 @@ class _ImportFlow {
           .showSnackBar(const SnackBar(content: Text('JSON 顶层必须是对象')));
       return;
     }
-    final ImportResult result = parseImportedTimetable(decoded);
+    // 类型提升只在当前作用域生效；下面 builder 闭包里要用它判断
+    // 是不是 App 备份，所以先存成一个明确类型的局部变量。
+    final Map<String, dynamic> root = decoded;
+    final ImportResult result = parseImportedTimetable(root);
     if (!result.isSuccessful) {
       if (!context.mounted) {
         return;
@@ -295,6 +298,11 @@ class _ImportFlow {
             builder: (_) => ImportPreviewScreen(
               courses: result.courses,
               skippedCount: result.skippedCount,
+              currentMeta: data.value.meta,
+              importedMeta: result.meta,
+              importedPeriods: result.periods,
+              importedOverrides: result.overrides,
+              isFullBackup: root.containsKey('courses'),
             ),
           ),
         );
@@ -309,10 +317,11 @@ class _ImportFlow {
   /// 确认导入：**全量替换** courses/overrides（跨学期隔离，绝不与旧课合并）。
   ///
   /// - overrides 按 course.id 引用，而导入的课程 id 全新（c_xxx / jw_xxx），
-  ///   旧 overrides 必然失效，必须同时清空；
-  /// - 教务 Excel 导入若识别到学期三件套，则连同 meta 一起写入
-  ///   （week1Monday / totalWeeks / semesterName），用户不用再手动设学期；
-  /// - 作息**绝不缩水**：教务 Excel 从节次列识别出非空 periods 才写入，
+  ///   旧 overrides 必然失效，必须同时清空；简课表备份除外——它带回
+  ///   自己的 overrides（courseId 与课程一起恢复）；
+  /// - 教务 Excel / JSON 携带的学期三件套，用户确认后连同 meta 一起写入
+  ///   （week1Monday / totalWeeks / semesterName），免去手动设学期；
+  /// - 作息**绝不缩水**：文件携带且校验通过的非空 periods 才写入，
   ///   否则沿用现有（[TimetableData.fromJson] 已保证现有 periods 非空）。
   Future<void> _applyImported(ImportConfirmation confirmed) async {
     final TimetableData current = data.value;
@@ -333,7 +342,7 @@ class _ImportFlow {
       meta: meta,
       periods: periods,
       courses: confirmed.courses,
-      overrides: const <CourseOverride>[],
+      overrides: confirmed.overrides ?? const <CourseOverride>[],
     );
     try {
       await storage.save(updated);

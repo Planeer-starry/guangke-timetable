@@ -36,7 +36,7 @@ from tkinter import filedialog, messagebox, ttk
 
 # 复用命令行版的解析与聚合逻辑（同名目录）
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from crawl import aggregate, collect_courses  # noqa: E402
+from crawl import aggregate, build_meta, collect_courses  # noqa: E402
 
 BASE = 'https://portal.gdust.edu.cn/smart-admin-api'
 API_CALENDAR = BASE + '/app/zf/get_school_calendar'
@@ -135,6 +135,7 @@ class CrawlerApp:
 
         self.running = False
         self.result: dict[str, list[dict]] = {}
+        self.meta: dict | None = None
         self._last_output: str | None = None
 
         self._build_style()
@@ -361,6 +362,7 @@ class CrawlerApp:
 
         self.running = True
         self.result = {}
+        self.meta = None
         self._last_output = None
         self.btn_start.configure(state='disabled')
         self.btn_save.configure(state='disabled')
@@ -395,7 +397,8 @@ class CrawlerApp:
 
         year = str(data.get('year') or '').strip()
         semester = str(data.get('semester') or '').strip()
-        total_weeks = data.get('allWeek')
+        raw_all_week = data.get('allWeek')
+        total_weeks = raw_all_week
         try:
             total_weeks = int(total_weeks)
         except (TypeError, ValueError):
@@ -403,6 +406,19 @@ class CrawlerApp:
         if total_weeks <= 0:
             total_weeks = 20
             self._log_from_worker('  总周数没拿到，按 20 周处理')
+        # meta（J11）：只写接口里能确定的字段，拿不到绝不编造。
+        # totalWeeks 用原始 allWeek，不用上面回退出的 20。
+        self.meta = build_meta(data.get('startTime'), raw_all_week)
+        if self.meta:
+            self._log_from_worker(
+                f'  将附带学期信息：{self.meta.get("semesterName") or "?"} · '
+                f'第一周 {self.meta.get("week1Monday") or "?"}'
+            )
+        else:
+            self._log_from_worker(
+                '  ⚠️ 学期开始日没拿到，输出的 JSON 不含 meta，'
+                '导入后需手动设置「第一周周一」'
+            )
         self._log_from_worker(
             f'  学年 {year or "?"} · 学期 {semester or "?"} · 总周数 {total_weeks}'
         )
@@ -507,9 +523,14 @@ class CrawlerApp:
         )
         if not path:
             return
+        # 有 meta（J11）时放最前面：App 导入会自动填写学期设置
+        output: dict[str, object] = {}
+        if self.meta:
+            output['meta'] = self.meta
+        output.update(self.result)
         try:
             with open(path, 'w', encoding='utf-8') as handle:
-                json.dump(self.result, handle, ensure_ascii=False, indent=2)
+                json.dump(output, handle, ensure_ascii=False, indent=2)
         except OSError as error:
             messagebox.showerror('保存失败', str(error))
             return

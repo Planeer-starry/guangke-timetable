@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:timetable/constants/app_config.dart';
@@ -24,7 +25,9 @@ import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/breakpoints.dart';
 import 'package:timetable/utils/course_color.dart';
 import 'package:timetable/utils/period_editor.dart';
+import 'package:timetable/utils/timetable_exporter.dart';
 import 'package:timetable/widgets/app_card.dart';
+import 'package:timetable/widgets/course_sheet_parts.dart';
 import 'package:timetable/widgets/palette_pack_sheet.dart';
 import 'package:timetable/widgets/theme_pack_sheet.dart';
 import 'package:timetable/widgets/update_section.dart';
@@ -291,6 +294,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  /// 导出课表（J11）：底部弹窗两选一——复制到剪贴板 / 保存为文件。
+  ///
+  /// 导出的是简课表备份 JSON（含学期 / 作息 / 课程 / 当周调整），
+  /// 换手机时经「导入 → 从文件 / 剪贴板」完整恢复。
+  Future<void> _openExportSheet() async {
+    final String json = exportTimetableJson(widget.data.value);
+    final ColorScheme colors = Theme.of(context).colorScheme;
+    final String? action = await showModalBottomSheet<String>(
+      context: context,
+      constraints: courseSheetConstraints,
+      backgroundColor: colors.surfaceContainerLow,
+      shape: courseSheetShape,
+      clipBehavior: Clip.antiAlias,
+      builder: (BuildContext sheetContext) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const SheetDragHandle(),
+            SheetHeaderCard(
+              color: colors.primary,
+              title: '导出课表',
+              lines: <String>['备份为简课表 JSON，换手机时导入即可完整恢复'],
+            ),
+            const SizedBox(height: 8),
+            SheetActionRow(
+              icon: Icons.content_copy,
+              title: '复制到剪贴板',
+              subtitle: '粘贴到聊天 / 备忘录发给自己',
+              onTap: () => Navigator.of(sheetContext).pop('clipboard'),
+            ),
+            SheetActionRow(
+              icon: Icons.save_outlined,
+              title: '保存为文件',
+              subtitle: '选择保存位置，生成 timetable.json',
+              onTap: () => Navigator.of(sheetContext).pop('file'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) {
+      return;
+    }
+    switch (action) {
+      case 'clipboard':
+        await Clipboard.setData(ClipboardData(text: json));
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('已复制，可直接发给自己')));
+      case 'file':
+        // file_picker 13.x 的 saveFile 在 Android 走 SAF 由用户选位置，
+        // 返回 null 表示取消（不算失败，不提示）。
+        try {
+          final Uri? uri = await FilePicker.saveFile(
+            fileName: 'timetable.json',
+            bytes: Uint8List.fromList(utf8.encode(json)),
+            mimeType: 'application/json',
+          );
+          if (!mounted) {
+            return;
+          }
+          if (uri != null) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(const SnackBar(content: Text('已保存到所选位置')));
+          }
+        } catch (error) {
+          if (!mounted) {
+            return;
+          }
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text('保存失败：$error')));
+        }
+    }
   }
 
   /// 外观：底部弹窗三选一（跟随系统 / 浅色 / 深色）。
@@ -640,6 +723,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
             storage: widget.storage,
             data: widget.data,
           ),
+        ),
+        ListTile(
+          leading: const Icon(Icons.upload_file),
+          title: const Text('导出课表'),
+          subtitle: const Text('备份为 .json，换手机时导入即可完整恢复'),
+          onTap: _openExportSheet,
         ),
         // 仅存在导入快照时显示（initState 异步查一次）
         if (_hasImportedSnapshot)

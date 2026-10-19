@@ -11,8 +11,12 @@ library;
 import 'dart:developer' as developer;
 
 import 'package:timetable/models/course.dart';
+import 'package:timetable/models/course_override.dart';
 import 'package:timetable/models/period.dart';
+import 'package:timetable/models/timetable_data.dart';
+import 'package:timetable/models/timetable_meta.dart';
 import 'package:timetable/utils/course_color.dart';
+import 'package:timetable/utils/period_editor.dart';
 import 'package:timetable/utils/week_mask.dart';
 
 /// 导入解析结果（含跳过统计与错误提示）。
@@ -21,6 +25,9 @@ class ImportResult {
     required this.courses,
     required this.skippedCount,
     this.error,
+    this.meta,
+    this.periods,
+    this.overrides,
   });
 
   /// 解析出来的课程列表。
@@ -32,32 +39,37 @@ class ImportResult {
   /// 解析失败的原因（选错文件 / 未识别到课程）；null 表示成功。
   final String? error;
 
+  /// 文件里携带的学期信息（可选）。教务 JSON 与 App 备份均可能提供，
+  /// 校验通过（week1Monday 已设置且 totalWeeks 在 1..maxWeek）才有值；
+  /// 解析失败一律为 null，绝不影响课程导入。
+  final TimetableMeta? meta;
+
+  /// 文件里携带的作息时间表（可选）。逐项解析并整体校验通过才有值。
+  final List<Period>? periods;
+
+  /// App 备份里携带的当周调整（可选）；教务 JSON 恒为 null。
+  final List<CourseOverride>? overrides;
+
   /// 是否可以进入预览。
   bool get isSuccessful => error == null && courses.isNotEmpty;
 }
 
-/// App 自身导出格式的特征键（顶层出现 ≥2 个即视为选错文件）。
-const Set<String> _appFormatKeys = <String>{
-  'schema',
-  'meta',
-  'periods',
-  'courses',
-};
-
 /// 节次合法上界（广科作息 10 节）。
 int get _maxSection => Period.defaults.length;
 
-/// 解析广科导出的按周展开 JSON，聚合成课程列表。
+/// 解析课表 JSON，返回课程列表与可选的学期 / 作息 / 当周调整。
+///
+/// 支持两种格式：
+/// 1. 教务 / 爬虫导出的按周展开 JSON `{"1":[...], ..., "20":[...]}`，
+///    顶层可附带 `meta` / `periods`（缺失或非法时忽略，行为与旧版一致）；
+/// 2. 简课表备份（顶层含 `courses` 键）→ 学期、作息、当周调整一并完整恢复，
+///    不走两级聚合。
 ///
 /// 周次以【字典的键】为准；条目里的 week 字段与键冲突时以键为准并记录警告。
 /// dayWeek 必须 1..7、section 必须 1..`_maxSection`，越界条目跳过并计数。
 ImportResult parseImportedTimetable(Map<String, dynamic> root) {
-  if (_appFormatKeys.intersection(root.keys.toSet()).length >= 2) {
-    return const ImportResult(
-      courses: <Course>[],
-      skippedCount: 0,
-      error: '这看起来是 App 导出的课表文件，请选择教务系统导出的 timetable.json',
-    );
+  if (root.containsKey('courses')) {
+    return _parseAppBackup(root);
   }
 
   final List<_RawEntry> raw = <_RawEntry>[];
@@ -96,7 +108,79 @@ ImportResult parseImportedTimetable(Map<String, dynamic> root) {
     );
   }
 
-  return ImportResult(courses: _aggregate(raw), skippedCount: skipped);
+  return ImportResult(
+    courses: _aggregate(raw),
+    skippedCount: skipped,
+    meta: _tryParseMeta(root['meta']),
+    periods: _tryParsePeriods(root['periods']),
+  );
+}
+
+/// 解析简课表备份（顶层含 courses 键）：学期、作息、当周调整一并带回。
+ImportResult _parseAppBackup(Map<String, dynamic> root) {
+  try {
+    final TimetableData data = TimetableData.fromJson(root);
+    if (data.courses.isEmpty) {
+      return const ImportResult(
+        courses: <Course>[],
+        skippedCount: 0,
+        error: '备份文件里没有课程，请检查文件是否完整',
+      );
+    }
+    return ImportResult(
+      courses: data.courses,
+      skippedCount: 0,
+      meta: _validOrNull(data.meta),
+      periods: validatePeriods(data.periods) == null ? data.periods : null,
+      overrides: data.overrides,
+    );
+  } catch (_) {
+    return const ImportResult(
+      courses: <Course>[],
+      skippedCount: 0,
+      error: '备份文件无法解析，请确认是简课表导出的 .json 文件',
+    );
+  }
+}
+
+/// 宽容解析顶层可选 meta：非 Map / 解析异常 / 校验不过 → null（不影响导入）。
+TimetableMeta? _tryParseMeta(Object? raw) {
+  if (raw is! Map) {
+    return null;
+  }
+  try {
+    return _validOrNull(TimetableMeta.fromJson(raw.cast<String, dynamic>()));
+  } catch (_) {
+    return null;
+  }
+}
+
+/// meta 有效性：week1Monday 已设置且 totalWeeks 在 1..maxWeek。
+TimetableMeta? _validOrNull(TimetableMeta meta) {
+  final bool valid =
+      meta.week1Monday.year > 1 &&
+      meta.totalWeeks >= 1 &&
+      meta.totalWeeks <= maxWeek;
+  return valid ? meta : null;
+}
+
+/// 宽容解析顶层可选 periods：非 List / 任何一项非法 / 整体校验不过 → null。
+List<Period>? _tryParsePeriods(Object? raw) {
+  if (raw is! List) {
+    return null;
+  }
+  try {
+    final List<Period> periods = <Period>[];
+    for (final Object? item in raw) {
+      if (item is! Map) {
+        return null;
+      }
+      periods.add(Period.fromJson(item.cast<String, dynamic>()));
+    }
+    return validatePeriods(periods) == null ? periods : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /// 一条从 JSON 解析出的原始上课记录（一个节次一条）。
