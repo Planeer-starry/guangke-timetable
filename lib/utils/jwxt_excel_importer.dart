@@ -136,6 +136,127 @@ String _shortLocation(String raw) {
   return lastSpace == -1 ? trimmed : trimmed.substring(lastSpace + 1);
 }
 
+// ───────────────────── 三行式条目（新版正方） ─────────────────────
+
+/// 三行式条目第 2 行：`1-3节  6-17周` / `1-2节  第16周`
+/// （节次 起-止 + 其后是周次）。
+final RegExp _threeLineSecondPattern = RegExp(
+  r'^(\d+)\s*[-–~]\s*(\d+)\s*节\s*(.+)$',
+);
+
+/// 解析三行式条目（新版正方「课表」工作表的课程格）：
+///
+/// ```
+/// 行1: 课名
+/// 行2: `<节次起>-<节次止>节  <周次>`   例：`1-3节  6-17周`
+/// 行3: `<地点>  <教师>`               地点与教师间是 ≥ 2 个空格
+/// ```
+///
+/// 恰好 3 行、第 2 行匹配节次+周次、周次能解析出非空集合才算命中
+/// （两条信息都齐）；未命中返回 null，由 [_parseCellLayers] 回落到
+/// 既有三层解析。广科单换行格式切出来只有 1 个条目且非 3 行 →
+/// 天然不命中，零回归。
+JwxtCellEntry? _parseThreeLineChunk(String chunk) {
+  final List<String> lines = chunk
+      .split(RegExp(r'\r\n|\r|\n'))
+      .map((String line) => line.trim())
+      .where((String line) => line.isNotEmpty)
+      .toList();
+  if (lines.length != 3) {
+    return null;
+  }
+  final String name = lines[0];
+  if (name.isEmpty) {
+    return null;
+  }
+  final RegExpMatch? match = _threeLineSecondPattern.firstMatch(lines[1]);
+  if (match == null) {
+    return null;
+  }
+  final Set<int> weeks = parseWeeksText(match.group(3)!.trim());
+  if (weeks.isEmpty) {
+    return null;
+  }
+  // 行 3 按 ≥ 2 个空格切 [地点, 教师]（1 段 = 无教师；≥ 3 段 = 第一段
+  // 地点、其余归教师，容忍地点本身含 2 空格的极端写法）
+  final List<String> parts = lines[2]
+      .split(RegExp(r'[ \t]{2,}'))
+      .map((String part) => part.trim())
+      .where((String part) => part.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) {
+    return null;
+  }
+  return JwxtCellEntry(
+    name: name,
+    sectionStart: int.parse(match.group(1)!),
+    sectionEnd: int.parse(match.group(2)!),
+    weeks: weeks,
+    location: parts.first,
+    teacher: parts.length >= 2 ? parts.sublist(1).join(' ') : '',
+  );
+}
+
+/// 课程格分层解析（整格 → 按空行切条目 → 每条目独立走层）：
+///
+/// 0. **三行式**（[_parseThreeLineChunk]，新版正方，多课格用空行分隔）；
+/// 1. 正方 `/` 紧凑格式（[parseCellText]，命中 ≥ 1 条 → 该条目不进第 2 层）；
+/// 2. 通用启发式（[parseGenericCell]，solid 优先）；
+/// 3. 兜底（fallback 条目，条数由返回值第二项带回）。
+///
+/// 空行切条目只影响新版正方；广科/青果格式无空行 → 整格一个条目，
+/// 各层行为与旧版完全一致。
+(List<_RawEntry>, int) _parseCellLayers(String cell) {
+  final List<_RawEntry> entries = <_RawEntry>[];
+  int fallbackAdded = 0;
+  // 按**空行**切条目。
+  //
+  // ⚠️ 不能写成 `(?:\r\n|\r|\n)[ \t]*(?:\r\n|\r|\n)`：
+  // 那个正则会在单个 `\r\n` 上回溯 —— 先试 `\r\n` 失败，
+  // 退回只匹配 `\r`，再用 `\n` 当第二个换行 —— 结果每个换行都被
+  // 当成空行，格子被切成一行一个 chunk，三行式解析永远拿不到 3 行（真机实测过）。
+  // 用 `\r?\n` 作为单位，单个换行行就不可能凑出两个。
+  final List<String> chunks = cell.split(RegExp(r'\r?\n[ \t]*\r?\n'));
+  for (final String chunk in chunks) {
+    final String trimmed = chunk.trim();
+    if (trimmed.isEmpty) {
+      continue;
+    }
+    // 第 0 层：三行式条目
+    final JwxtCellEntry? threeLine = _parseThreeLineChunk(trimmed);
+    if (threeLine != null) {
+      entries.add(_RawEntry.fromFirstLayer(threeLine));
+      continue;
+    }
+    // 第 1 层：正方 `/` 紧凑格式
+    final List<JwxtCellEntry> firstLayer = parseCellText(trimmed);
+    if (firstLayer.isNotEmpty) {
+      entries.addAll(<_RawEntry>[
+        for (final JwxtCellEntry e in firstLayer) _RawEntry.fromFirstLayer(e),
+      ]);
+      continue;
+    }
+    // 第 2/3 层：通用启发式 + 兜底
+    final List<GenericCellEntry> generic = parseGenericCell(trimmed);
+    final List<GenericCellEntry> solid = <GenericCellEntry>[
+      for (final GenericCellEntry e in generic)
+        if (!e.fallback) e,
+    ];
+    if (solid.isNotEmpty) {
+      entries.addAll(<_RawEntry>[
+        for (final GenericCellEntry e in solid) _RawEntry.fromGeneric(e),
+      ]);
+    } else if (generic.isNotEmpty) {
+      // 第 3 层兜底：宁可粗糙也要出东西，绝不静默丢弃
+      fallbackAdded += generic.length;
+      entries.addAll(<_RawEntry>[
+        for (final GenericCellEntry e in generic) _RawEntry.fromGeneric(e),
+      ]);
+    }
+  }
+  return (entries, fallbackAdded);
+}
+
 /// 注释行元信息：「本学期2026-08-31正式上课…共20周.」。
 final RegExp _metaPattern = RegExp(
   r'(\d{4}-\d{2}-\d{2})\s*正式上课.*?共\s*(\d+)\s*周',
@@ -147,12 +268,16 @@ final RegExp _metaPattern = RegExp(
 /// 广科样表节次列是汉字「一..五」，行推断只能数出 5，若拿它当上界校验
 /// 格内自带的 (9-10节)，会误杀约 10 门晚课）。行推断节数只是「标签数」，
 /// 不代表表格真实节次容量——格内自带节次一律以绝对界校验。
-const int _absMaxSection = 24;
+///
+/// 公开供 jwxt_table_importer（逐条表解析）复用。
+const int absMaxSection = 24;
 
 // ───────────────────── 表头两级识别 ─────────────────────
 
 /// 汉字/数字 → 星期号（1..7）；「日」「天」都是 7。
-const Map<String, int> _dayChars = <String, int>{
+///
+/// 公开供 jwxt_table_importer（逐条表解析）复用。
+const Map<String, int> dayChars = <String, int>{
   '一': 1,
   '二': 2,
   '三': 3,
@@ -197,7 +322,7 @@ int? _matchDayHeader(String? cell, {required bool bare}) {
   if (match == null) {
     return null;
   }
-  return _dayChars[match.group(1)!];
+  return dayChars[match.group(1)!];
 }
 
 /// 数一行里命中星期表头的格数。
@@ -224,11 +349,13 @@ class _SectionLabel {
   final (String, String)? time;
 }
 
-/// 识别节次列格文本，覆盖四种形态：
+/// 识别节次列格文本，覆盖五种形态：
 /// 1. `^\d{1,2}$`（纯编号）；
 /// 2. `第N节`；
 /// 3. `N\nHH:MM-HH:MM`（编号 + 时间，多行格）；
-/// 4. `HH:MM-HH:MM`（纯时间，编号靠行序）。
+/// 4. `HH:MM-HH:MM`（纯时间，编号靠行序）；
+/// 5. `N\nHH:MM\nHH:MM`（编号 + 开始/结束两个独立时间点，
+///    新版正方三段式，如 `1\n08:00\n08:40`）。
 ///
 /// 都不是（如汉字「一」「二」、文字「上午」）→ null。
 _SectionLabel? _matchSectionLabel(String text) {
@@ -254,6 +381,17 @@ _SectionLabel? _matchSectionLabel(String text) {
       if (range != null) {
         time = range;
       }
+    }
+  }
+  // 形态 5（新版正方三段式）：编号 + 开始/结束两个独立时间点。
+  // 放在形态 1-4 的循环之后：循环通常已抓到编号但抓不到时间
+  // （`08:00` 不是 `HH:MM-HH:MM` 范围），由此兜住并补全时间。
+  if (time == null && lines.length == 3) {
+    final RegExpMatch? numbered = RegExp(r'^(\d{1,2})$').firstMatch(lines[0]);
+    final String? start = _matchTimePoint(lines[1]);
+    final String? end = _matchTimePoint(lines[2]);
+    if (numbered != null && start != null && end != null) {
+      return _SectionLabel(int.parse(numbered.group(1)!), (start, end));
     }
   }
   if (number == null && time == null) {
@@ -282,6 +420,21 @@ _SectionLabel? _matchSectionLabel(String text) {
     '${h1.toString().padLeft(2, '0')}:${m1.toString().padLeft(2, '0')}',
     '${h2.toString().padLeft(2, '0')}:${m2.toString().padLeft(2, '0')}',
   );
+}
+
+/// 单个时间点 `HH:MM`，归一化为补零；非法时间（小时 > 23 / 分钟 > 59）
+/// 视为没读到。三段式节次列（`1\n08:00\n08:40`）的第二/三行用它。
+String? _matchTimePoint(String line) {
+  final RegExpMatch? match = RegExp(r'^(\d{1,2}):(\d{2})$').firstMatch(line);
+  if (match == null) {
+    return null;
+  }
+  final int h = int.parse(match.group(1)!);
+  final int m = int.parse(match.group(2)!);
+  if (h > 23 || m > 59) {
+    return null;
+  }
+  return '${h.toString().padLeft(2, '0')}:${m.toString().padLeft(2, '0')}';
 }
 
 // ───────────────────── 三层条目统一 ─────────────────────
@@ -414,7 +567,8 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
   for (int r = 0; r < headerRow; r++) {
     for (final String? cell in rows[r]) {
       if (cell != null && cell.contains('学期')) {
-        semesterName = cell.trim();
+        // 标题可能挤着姓名学号（新版正方），提取纯学期段
+        semesterName = extractSemesterName(cell);
         break outer;
       }
     }
@@ -488,7 +642,7 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
       continue;
     }
     final int? index = e.value.number ?? rowSectionOf[e.key];
-    if (index == null || index < 1 || index > _absMaxSection) {
+    if (index == null || index < 1 || index > absMaxSection) {
       continue;
     }
     periodByIndex[index] = Period(index: index, start: time.$1, end: time.$2);
@@ -527,29 +681,11 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
         continue;
       }
 
-      // 第 1 层：正方 `/` 紧凑格式（命中 ≥ 1 条 → 整格不进第 2 层）
-      List<_RawEntry> entries = <_RawEntry>[
-        for (final JwxtCellEntry e in parseCellText(cell))
-          _RawEntry.fromFirstLayer(e),
-      ];
-      if (entries.isEmpty) {
-        final List<GenericCellEntry> generic = parseGenericCell(cell);
-        final List<GenericCellEntry> solid = <GenericCellEntry>[
-          for (final GenericCellEntry e in generic)
-            if (!e.fallback) e,
-        ];
-        if (solid.isNotEmpty) {
-          entries = <_RawEntry>[
-            for (final GenericCellEntry e in solid) _RawEntry.fromGeneric(e),
-          ];
-        } else if (generic.isNotEmpty) {
-          // 第 3 层兜底：宁可粗糙也要出东西，绝不静默丢弃
-          fallbackCount += generic.length;
-          entries = <_RawEntry>[
-            for (final GenericCellEntry e in generic) _RawEntry.fromGeneric(e),
-          ];
-        }
-      }
+      // 课程格分层解析（空行切条目：三行式 → 第 1 层 → 第 2/3 层）
+      final (List<_RawEntry> entries, int fallbackAdded) = _parseCellLayers(
+        cell,
+      );
+      fallbackCount += fallbackAdded;
 
       for (final _RawEntry entry in entries) {
         // 节次：格内自带 → 绝对校验（E1，不与 detectedSectionCount 挂钩）；
@@ -558,7 +694,7 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
         final int sectionEnd;
         if (entry.sectionStart != null && entry.sectionEnd != null) {
           if (entry.sectionStart! < 1 ||
-              entry.sectionEnd! > _absMaxSection ||
+              entry.sectionEnd! > absMaxSection ||
               entry.sectionEnd! < entry.sectionStart!) {
             skipped++;
             continue;
@@ -569,7 +705,7 @@ JwxtImportResult parseJwxtWorkbook(List<List<String?>> rows) {
           final int? rowSection = rowSectionOf[r];
           if (rowSection == null ||
               rowSection < 1 ||
-              rowSection > _absMaxSection) {
+              rowSection > absMaxSection) {
             skipped++;
             continue;
           }

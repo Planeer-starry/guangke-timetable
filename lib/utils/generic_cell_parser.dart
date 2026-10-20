@@ -34,7 +34,9 @@ Set<int> parseWeeksText(String text) {
   final bool even = text.contains('双');
   final String cleaned = text
       .replaceAll(RegExp(r'[（(]?\s*[单双]\s*周?\s*[）)]?'), '')
-      .replaceAll('周', '');
+      .replaceAll('周', '')
+      // 「第16周」这种带「第」的单周写法（新版正方）：去「第」按单周解析
+      .replaceAll('第', '');
   final Set<int> weeks = <int>{};
   for (final String segment in cleaned.split(RegExp(r'[,，、;；\s]+'))) {
     if (segment.isEmpty) {
@@ -69,6 +71,26 @@ Set<int> parseWeeksText(String text) {
     return weeks.where((int w) => w % 2 == 0).toSet();
   }
   return weeks;
+}
+
+/// 从标题格文本提取学期名。
+///
+/// 新版正方把学期、姓名、学号挤在标题同一格
+/// （如 `2026-2027学年第1学期  江浩然课表    学号：2620110078`）：
+/// 按 2 个及以上连续空格切段，取第一个含「学期」的段；
+/// 切不出多段时原样返回（广科标题是干净整格，不受影响）。
+String extractSemesterName(String text) {
+  final String trimmed = text.trim();
+  if (!trimmed.contains('学期')) {
+    return trimmed;
+  }
+  for (final String segment in trimmed.split(RegExp(r'[ \t]{2,}'))) {
+    final String piece = segment.trim();
+    if (piece.contains('学期')) {
+      return piece;
+    }
+  }
+  return trimmed;
 }
 
 /// 第 2/3 层解析出的一条课程记录。
@@ -303,7 +325,7 @@ Set<int>? _matchWeeks(String text) {
   if (weeks.isEmpty) {
     return null;
   }
-  final String cleaned = prepared.replaceAll(RegExp(r'[周单双]'), ' ');
+  final String cleaned = prepared.replaceAll(RegExp(r'[周单双第]'), ' ');
   for (final String piece in cleaned.split(RegExp(r'[,，、;；\s]+'))) {
     if (piece.isEmpty) {
       continue;

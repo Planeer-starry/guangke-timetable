@@ -15,6 +15,7 @@ import 'package:timetable/screens/semester_setup_screen.dart';
 import 'package:timetable/services/storage_service.dart';
 import 'package:timetable/services/widget_service.dart';
 import 'package:timetable/utils/jwxt_excel_importer.dart';
+import 'package:timetable/utils/jwxt_table_importer.dart';
 import 'package:timetable/utils/timetable_importer.dart';
 import 'package:timetable/widgets/course_sheet_parts.dart';
 
@@ -118,7 +119,12 @@ class _ImportFlow {
 
   // ───────────────────── 教务 Excel 导入 ─────────────────────
 
-  /// 选 .xls/.xlsx → 读字节 → excel_plus 解码 → 纯函数解析 → 预览。
+  /// 选 .xls/.xlsx → 读字节 → excel_plus 解码 → 多工作表择优 → 预览。
+  ///
+  /// 新版正方 xlsx 常有「课表（网格）/ 课程明细（逐条表）/ 说明」多张
+  /// 工作表：每张表先试逐条表解析、不是（返回 null）再试网格解析；
+  /// 取课程数最多的成功结果（打平时逐条表优先），作息 / 学期名缺失时
+  /// 从其它成功表补充；全部失败时用第一个错误提示。
   Future<void> _importJwxtExcel() async {
     final List<PlatformFile> picked = await FilePicker.pickFiles(
       type: FileType.custom,
@@ -139,31 +145,47 @@ class _ImportFlow {
       return;
     }
 
-    final JwxtImportResult result;
+    // 候选 = (解析结果, 是否逐条表)。择优逻辑见 [_pickBestResult]。
+    final List<(JwxtImportResult, bool)> candidates;
+    final List<String> failures;
     try {
       final Excel excel = await Excel.decodeBytesAsync(bytes);
       if (excel.tables.isEmpty) {
         _snack('表格里没有任何工作表');
         return;
       }
-      final Sheet sheet = excel.tables.values.first;
-      // 转成纯字符串矩阵：解析逻辑在 jwxt_excel_importer 里单测，不碰 excel_plus
-      final List<List<String?>> rows = sheet.rows
-          .map(
-            (List<dynamic> row) =>
-                row.map((dynamic cell) => cell?.value?.toString()).toList(),
-          )
-          .toList();
-      result = parseJwxtWorkbook(rows);
+      candidates = <(JwxtImportResult, bool)>[];
+      failures = <String>[];
+      for (final Sheet sheet in excel.tables.values) {
+        // 转成纯字符串矩阵：解析逻辑在 utils 里单测，不碰 excel_plus
+        final List<List<String?>> rows = sheet.rows
+            .map(
+              (List<dynamic> row) =>
+                  row.map((dynamic cell) => cell?.value?.toString()).toList(),
+            )
+            .toList();
+        final JwxtImportResult? detail = parseJwxtDetailTable(rows);
+        final JwxtImportResult result = detail ?? parseJwxtWorkbook(rows);
+        if (result.isSuccessful) {
+          candidates.add((result, detail != null));
+        } else if (result.error != null) {
+          failures.add(result.error!);
+        }
+      }
     } catch (error) {
       _snack('无法解析这个 Excel 文件：$error');
       return;
     }
-    if (!result.isSuccessful) {
+    if (candidates.isEmpty) {
       // 空表/无法识别：SnackBar 装不下多行建议，改用 AlertDialog
       if (!context.mounted) {
         return;
       }
+      // 用第一个非空 error 当提示：用户报 Issue 时能直接说明，
+      // 也便于区分「选错文件」和「格式不支持」
+      final String reason = failures.isNotEmpty
+          ? failures.first
+          : '未识别到任何课程，请确认选的是教务系统导出的课表';
       await showDialog<void>(
         context: context,
         builder: (BuildContext dialogContext) => AlertDialog(
@@ -172,18 +194,14 @@ class _ImportFlow {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              // 保留解析器的具体原因（「未找到表头」/「未识别到课程」），
-              // 用户报 Issue 时能直接说明，也便于区分「选错文件」和「格式不支持」
-              if (result.error != null) ...<Widget>[
-                Text(
-                  result.error!,
-                  style: TextStyle(
-                    color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                    fontSize: 13,
-                  ),
+              Text(
+                reason,
+                style: TextStyle(
+                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
+                  fontSize: 13,
                 ),
-                const SizedBox(height: 12),
-              ],
+              ),
+              const SizedBox(height: 12),
               const Text('① 先导入后手动添加课程（AppBar「+」）'),
               const SizedBox(height: 8),
               const Text('② 把表格发到 GitHub Issue 附上学校名，我们适配'),
@@ -198,6 +216,25 @@ class _ImportFlow {
         ),
       );
       return;
+    }
+    // 择优 + 互补：作息 / 学期名在主结果里缺失时（典型：主结果是逐条表，
+    // 它没有节次时间列），从其它成功表补——同一文件同一学校，语义一致。
+    JwxtImportResult result = _pickBestResult(candidates);
+    final List<Period>? periods = result.periods ?? _firstPeriodsOf(candidates);
+    final String? semesterName =
+        result.semesterName ?? _firstSemesterNameOf(candidates);
+    if (periods != result.periods || semesterName != result.semesterName) {
+      result = JwxtImportResult(
+        courses: result.courses,
+        skippedCount: result.skippedCount,
+        week1Monday: result.week1Monday,
+        totalWeeks: result.totalWeeks,
+        semesterName: semesterName,
+        periods: periods,
+        usedDefaultPeriods: periods == null,
+        detectedSectionCount: result.detectedSectionCount,
+        fallbackCount: result.fallbackCount,
+      );
     }
     if (!context.mounted) {
       return;
@@ -413,4 +450,48 @@ class _ImportFlow {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
   }
+}
+// ───────────────────── 多工作表择优（纯逻辑，UI 层私有） ─────────────────────
+
+/// 多表择优：课程数最多者优先；打平 → 逐条表优先（列语义明确、
+/// 不依赖启发式）；再打平 → 跳过少的优先。
+///
+/// 择优逻辑按约定留在 UI 层（不塞进 utils 纯函数），测试里以同构
+/// 逻辑复刻验证（test/jwxt_excel_fixture_test.dart）。
+JwxtImportResult _pickBestResult(List<(JwxtImportResult, bool)> candidates) {
+  (JwxtImportResult, bool) best = candidates.first;
+  for (final (JwxtImportResult, bool) candidate in candidates.skip(1)) {
+    final bool better;
+    if (candidate.$1.courses.length != best.$1.courses.length) {
+      better = candidate.$1.courses.length > best.$1.courses.length;
+    } else if (candidate.$2 != best.$2) {
+      better = candidate.$2;
+    } else {
+      better = candidate.$1.skippedCount < best.$1.skippedCount;
+    }
+    if (better) {
+      best = candidate;
+    }
+  }
+  return best.$1;
+}
+
+/// 第一个携带非空作息的候选（供主结果互补）。
+List<Period>? _firstPeriodsOf(List<(JwxtImportResult, bool)> candidates) {
+  for (final (JwxtImportResult result, _) in candidates) {
+    if (result.periods != null && result.periods!.isNotEmpty) {
+      return result.periods;
+    }
+  }
+  return null;
+}
+
+/// 第一个携带学期名的候选（供主结果互补）。
+String? _firstSemesterNameOf(List<(JwxtImportResult, bool)> candidates) {
+  for (final (JwxtImportResult result, _) in candidates) {
+    if (result.semesterName != null && result.semesterName!.isNotEmpty) {
+      return result.semesterName;
+    }
+  }
+  return null;
 }
