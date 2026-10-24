@@ -108,7 +108,7 @@
    `flutter clean`、`rmdir`。
    需要清理任何东西时，**先告诉我，由我来执行**。
 
-9. **你的工作范围严格限定在 `E:\dev\projects\timetable` 目录内。**
+9. **你的工作范围严格限定在 `E:\dev\jiankebiao\projects\timetable` 目录内。**
    **禁止**读取、创建或修改该目录之外的任何文件——
    尤其是 `C:\Users\...\.codeartsdoer\`、用户主目录、其它盘符。
    如果某个操作需要超出这个范围，**停下来问我**。
@@ -149,7 +149,7 @@
     需要用 Dart 工具时，调 `.exe`：
 
     ```bash
-    E:/dev/flutter/bin/dart.exe format .
+    E:/dev/jiankebiao/flutter/bin/dart.exe format .
     ```
 
     另外：

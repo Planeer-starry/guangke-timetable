@@ -60,7 +60,7 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
 }
 
 if (-not $env:JAVA_HOME) {
-    Fail '未设置环境变量 JAVA_HOME。请设置为 JDK 17 安装目录（例如 E:\dev\jdk17）。'
+    Fail '未设置环境变量 JAVA_HOME。请设置为 JDK 17 安装目录（例如 E:\dev\jiankebiao\jdk17）。'
 }
 if (-not (Test-Path (Join-Path $env:JAVA_HOME 'bin\java.exe'))) {
     Fail "JAVA_HOME（$env:JAVA_HOME）目录里没有 bin\java.exe，请检查环境变量。"

@@ -257,7 +257,7 @@ https://portal.gdust.edu.cn/smart-admin-api/app/zf/get_student_course?jobNumber=
 ## 方式 B：Python（适合脚本化）
 
 ```powershell
-cd E:\dev\projects\timetable\tools\gdust_crawl
+cd E:\dev\jiankebiao\projects\timetable\tools\gdust_crawl
 
 python crawl.py `
   --url "第①步复制的URL" `

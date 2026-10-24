@@ -104,7 +104,7 @@
 不需要装任何第三方库（只用标准库）。
 
 ```powershell
-cd E:\dev\projects\timetable\tools\gdust_crawl
+cd E:\dev\jiankebiao\projects\timetable\tools\gdust_crawl
 
 python crawl.py `
   --url "https://教务系统域名/xxx/get_student_course?jobNumber=xx&year=2026&semester=1&week=5" `
