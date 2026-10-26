@@ -32,8 +32,13 @@ Future<void> main() async {
     themeForMigration: themeService.active.value,
   );
   WidgetService.setAccent(themeService.active.value);
-  // J9：小组件皮肤（背景 / 文字色跟随主题包，Kotlin 按 uiMode 挑亮暗套）
-  WidgetService.setSkin(themeService.active.value);
+  // J9：小组件皮肤（背景 / 文字色跟随主题包）。
+  // 亮暗必须按「App 实际生效的亮度」下发，不能交给 Kotlin 只看系统 ——
+  // App 主题可强制浅色/深色，那会和系统深浅色不一致。
+  WidgetService.setSkin(
+    themeService.active.value,
+    themeMode: settings.themeMode,
+  );
   final TimetableData data = await storage.load();
   // 启动即同步一次小组件数据（精确闹钟可用性只提示，不阻塞启动）
   unawaited(WidgetService.refreshAll(data));

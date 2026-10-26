@@ -121,7 +121,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _onThemePackChanged() {
     final ThemePack pack = widget.themeService.active.value;
     WidgetService.setAccent(pack);
-    WidgetService.setSkin(pack);
+    WidgetService.setSkin(pack, themeMode: widget.settings.themeMode);
     final bool switched = pack.id != _lastThemeId;
     _lastThemeId = pack.id;
     if (switched && pack.coursePalette != null) {
@@ -401,6 +401,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       return;
     }
     await widget.settings.setThemeMode(picked);
+    if (!mounted) {
+      return;
+    }
+    // ⚠️ 切深浅色后必须重下发皮肤并刷新小组件：
+    // 小组件的颜色是「渲染那一刻写死的常量」，不重渲染就会一直停在旧配色。
+    // （曾被报为「小组件不跟随深浅色」的真实原因之一。）
+    final ThemePack pack = widget.themeService.active.value;
+    WidgetService.setAccent(pack);
+    WidgetService.setSkin(pack, themeMode: picked);
+    await WidgetService.refreshAll(widget.data.value);
   }
 
   /// 恢复导入的原始课表：确认后用快照整体替换当前数据。

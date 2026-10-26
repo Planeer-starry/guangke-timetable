@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:timetable/models/theme_pack.dart';
@@ -18,6 +20,10 @@ List<(String, String, WidgetSkin)> _builtinSkinCases() {
 }
 
 void main() {
+  // WidgetService.resolveBrightness('system') 会读 WidgetsBinding，
+  // 普通 test() 不会自动初始化 binding，必须显式建一次。
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('widgetSkinFromTheme', () {
     test('六套内置包 light/dark 六字段非 0', () {
       for (final (String packName, String label, WidgetSkin skin)
@@ -114,9 +120,80 @@ void main() {
       }
     });
   });
+
+  group('widgetSkinPayload（下发 payload，含实际生效亮暗）', () {
+    test('mode 原样写入：light / dark 固定，system 也传 system', () {
+      final ThemePack pack = ThemePack.builtins.first;
+      // light / dark 必须原样下发：App 强制深色时小组件要跟着深色
+      for (final String mode in <String>['light', 'dark']) {
+        final Map<String, dynamic> json =
+            jsonDecode(widgetSkinPayload(pack, themeMode: mode))
+                as Map<String, dynamic>;
+        expect(json['mode'], mode);
+        expect(json['light'], isA<Map<String, dynamic>>());
+        expect(json['dark'], isA<Map<String, dynamic>>());
+      }
+      // system 必须保留原样（不能解析成固定亮度）：App 没运行时系统切主题，
+      // 只有 Kotlin 每次现读 uiMode 才能跟上
+      final Map<String, dynamic> sys =
+          jsonDecode(widgetSkinPayload(pack, themeMode: 'system'))
+              as Map<String, dynamic>;
+      expect(sys['mode'], 'system');
+    });
+
+    test('未知 themeMode 归一成 system（不会写出脏值）', () {
+      final Map<String, dynamic> json =
+          jsonDecode(widgetSkinPayload(ThemePack.builtins.first,
+                  themeMode: 'weird-value'))
+              as Map<String, dynamic>;
+      expect(json['mode'], 'system');
+    });
+
+    test('dark 套与 widgetSkinFromTheme 对应结果一致', () {
+      final ThemePack pack = ThemePack.builtins[1];
+      final ({WidgetSkin light, WidgetSkin dark}) skins = widgetSkinFromTheme(pack);
+      final Map<String, dynamic> darkJson =
+          jsonDecode(widgetSkinPayload(pack, themeMode: 'dark'))
+              as Map<String, dynamic>;
+      final Map<String, dynamic> darkSet =
+          darkJson['dark'] as Map<String, dynamic>;
+      expect(darkSet['card'], skins.dark.card.toString());
+      expect(darkSet['title'], skins.dark.title.toString());
+    });
+
+    // 契约测试：Kotlin 的 WidgetColors.skinOf 只认这三个顶层键
+    // （light / dark / mode）。任何一侧改名都会让皮肤静默失效 ——
+    // 表现就是「小组件不跟随主题」，所以这里钉死键名。
+    test('顶层键契约与 Kotlin skinOf 一致（light / dark / mode）', () {
+      final Map<String, dynamic> json =
+          jsonDecode(widgetSkinPayload(ThemePack.builtins.first,
+                  themeMode: 'dark'))
+              as Map<String, dynamic>;
+      expect(
+        json.keys.toSet(),
+        <String>{'light', 'dark', 'mode'},
+        reason: '改了键名要同步改 android/.../WidgetColors.kt 的 skinOf',
+      );
+    });
+
+    test('payload 里颜色仍是可被 toLongOrNull 解析的十进制字符串', () {
+      final Map<String, dynamic> json =
+          jsonDecode(widgetSkinPayload(ThemePack.builtins.first,
+                  themeMode: 'light'))
+              as Map<String, dynamic>;
+      for (final String key in <String>['light', 'dark']) {
+        final Map<String, dynamic> set = json[key] as Map<String, dynamic>;
+        for (final String field in <String>[
+          'card', 'title', 'sub', 'divider', 'gridEmpty', 'accent',
+        ]) {
+          expect(int.tryParse(set[field] as String), isNotNull,
+              reason: '$key.$field 不是十进制整数');
+        }
+      }
+    });
+  });
 }
 
-/// 六字段按名展开（「非 0」用例用）。
 Map<String, int> _fieldsOf(WidgetSkin skin) {
   return <String, int>{
     'card': skin.card,

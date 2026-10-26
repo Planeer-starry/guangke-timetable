@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -71,6 +72,29 @@ WidgetSkin _skinOf(ThemePack pack, ColorScheme colors) {
     gridEmpty: colors.surfaceContainerHighest.toARGB32(),
     accent: _accentOf(pack, colors).toARGB32(),
   );
+}
+
+/// 生成下发小组件的皮肤 payload（纯函数，便于单测）。
+///
+/// 结构：`{"light":{…},"dark":{…},"mode":"system"|"light"|"dark"}`
+///
+/// [themeMode] 是用户选的**主题模式**，不是解析后的亮度 —— 这一点很关键：
+/// - `light` / `dark`：App 强制指定，小组件必须跟着用同一套，
+///   否则会出现「App 深色、小组件亮色」；
+/// - `system`：小组件要**实时**跟随系统深浅色。下发的若是某个固定亮度值，
+///   App 没运行、系统切了主题时会挑到陈旧的那一套，所以必须把 `system`
+///   原样传下去，让 Kotlin 每次渲染时现读 `uiMode`。
+String widgetSkinPayload(ThemePack pack, {required String themeMode}) {
+  final ({WidgetSkin light, WidgetSkin dark}) skins = widgetSkinFromTheme(pack);
+  final String mode = switch (themeMode) {
+    'light' || 'dark' => themeMode,
+    _ => 'system',
+  };
+  return jsonEncode(<String, dynamic>{
+    'light': skins.light.toJson(),
+    'dark': skins.dark.toJson(),
+    'mode': mode,
+  });
 }
 
 /// 强调色：主题包显式指定则用之；否则取该亮暗度下的 Material 3

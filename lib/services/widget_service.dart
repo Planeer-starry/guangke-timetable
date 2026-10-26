@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:home_widget/home_widget.dart';
 import 'package:timetable/models/theme_pack.dart';
 import 'package:timetable/models/timetable_data.dart';
@@ -45,7 +43,8 @@ class WidgetService {
   /// Material 3 角色色保证；12 以下只有文字色跟随。
   static int? _accentValue;
 
-  /// 当前小组件皮肤（J9）的 JSON payload（`{"light":{...},"dark":{...}}`）；
+  /// 当前小组件皮肤（J9）的 JSON payload
+  /// （`{"light":{...},"dark":{...},"active":"light"|"dark"}`）；
   /// null = 从未设置过主题包（写空串，Kotlin 侧解析失败回退资源色）。
   ///
   /// 与 [_accentValue] 同套路：[setSkin] 只记内存，[refreshAll] 统一写入，
@@ -59,17 +58,12 @@ class WidgetService {
 
   /// 按主题包计算小组件皮肤（J9：卡片背景 / 文字 / 分隔线 / 淡底）。
   ///
-  /// 亮/暗两套由 [widgetSkinFromTheme] 用 Material 3 角色色算好，
-  /// Kotlin 侧按系统深色模式挑一套；Android 12+ 经 backgroundTintList
-  /// 给现有圆角 shape 换色（SRC_IN 保留圆角），12 以下只应用文字色。
-  static void setSkin(ThemePack pack) {
-    final ({WidgetSkin light, WidgetSkin dark}) skins = widgetSkinFromTheme(
-      pack,
-    );
-    _skinPayload = jsonEncode(<String, dynamic>{
-      'light': skins.light.toJson(),
-      'dark': skins.dark.toJson(),
-    });
+  /// 亮 / 暗两套由 [widgetSkinFromTheme] 用 Material 3 角色色算好，连同用户选的
+  /// **主题模式**一起下发，由 Kotlin 决定挑哪套（理由见 [widgetSkinPayload]）。
+  /// Android 12+ 经 backgroundTintList 给现有圆角 shape 换色（SRC_IN 保留
+  /// 圆角），12 以下只应用文字色。
+  static void setSkin(ThemePack pack, {String themeMode = 'system'}) {
+    _skinPayload = widgetSkinPayload(pack, themeMode: themeMode);
   }
 
   /// 重新计算候选并同步「下节课」小组件。

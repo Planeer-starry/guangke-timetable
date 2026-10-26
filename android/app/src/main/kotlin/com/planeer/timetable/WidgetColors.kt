@@ -51,9 +51,18 @@ object WidgetColors {
   }
 
   /**
-   * 当前皮肤：读 `widget_skin`（`{"light":{…},"dark":{…}}`）按系统深色
-   * 模式挑一套。全 try/catch + 字段级兜底：任何缺失 / 非法都整体返回
-   * null，调用方回退资源色——绝不渲染「半套皮肤」。
+   * 当前皮肤：读 `widget_skin`
+   * （`{"light":{…},"dark":{…},"mode":"system"|"light"|"dark"}`）。
+   *
+   * 亮暗套的选择规则（对应 Dart 的 `widgetSkinPayload`）：
+   * - `mode = "light"` / `"dark"`：用户在 App 里强制指定了主题 ——
+   *   **必须照办**。若这里只看系统深浅色，会出现「App 深色、小组件亮色」，
+   *   也就是用户报的「小组件不跟随主题」。
+   * - `mode = "system"` 或缺失：每次渲染时**现读** `uiMode`。
+   *   不能下发一个固定亮度值 —— App 没运行时系统切了主题会挑到陈旧的那套。
+   *
+   * 全 try/catch + 字段级兜底：任何缺失 / 非法都整体返回 null，
+   * 调用方回退资源色——绝不渲染「半套皮肤」。
    */
   fun skinOf(widgetData: SharedPreferences, context: Context): Skin? {
     val raw = widgetData.getString("widget_skin", null)
@@ -62,9 +71,13 @@ object WidgetColors {
     }
     return try {
       val root = JSONObject(raw)
-      val skin =
-          root.optJSONObject(if (isNightMode(context)) "dark" else "light")
-              ?: return null
+      val mode = root.optString("mode", "")
+      val key = when (mode) {
+        "dark" -> "dark"
+        "light" -> "light"
+        else -> if (isNightMode(context)) "dark" else "light"
+      }
+      val skin = root.optJSONObject(key) ?: return null
       // 局部函数返回 Int? ，逐个 `?: return null` 让任一字段缺失就整体失败。
       //
       // ⚠️ 不能写成 `fun colorOf(name: String): Int = ... ?: return null`：

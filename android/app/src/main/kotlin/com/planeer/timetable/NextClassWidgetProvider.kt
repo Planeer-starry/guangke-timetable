@@ -1,10 +1,14 @@
 package com.planeer.timetable
 
 import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.widget.RemoteViews
 
+import es.antonborri.home_widget.HomeWidgetLaunchIntent
+import es.antonborri.home_widget.HomeWidgetPlugin
 import es.antonborri.home_widget.HomeWidgetProvider
 
 /**
@@ -58,7 +62,37 @@ class NextClassWidgetProvider : HomeWidgetProvider() {
         views.setTextViewText(R.id.next_sub, "${pick.whenText} · ${pick.location}")
         views.setInt(R.id.next_color, "setBackgroundColor", pick.color)
       }
+      // 点击整个组件打开 App（与「一周总课表」一致）。
+      // home_widget 0.10.0 的签名是 getActivity(context, activityClass, uri)，
+      // 必须显式传 activityClass，没有只接受 context 的重载。
+      views.setOnClickPendingIntent(
+          R.id.next_class_root,
+          HomeWidgetLaunchIntent.getActivity(context, MainActivity::class.java))
       appWidgetManager.updateAppWidget(appWidgetId, views)
+    }
+  }
+
+  /**
+   * 系统深浅色切换时重渲染。
+   *
+   * RemoteViews 里的 setTextColor / setBackgroundTintList 是**渲染那一刻写死的
+   * 常量**，不像布局里的 `@color` 那样跟随 values-night 自动变化；系统切深浅色
+   * 时也不会主动重跑 onUpdate。不在这里主动刷一次，小组件会一直停在旧配色上
+   * （用户报的「小组件不跟随深浅色」）。
+   *
+   * 兜底：Android 8+ 对静态注册的隐式广播有限制，CONFIGURATION_CHANGED 不一定
+   * 每次都送达；appwidget-provider 里的 updatePeriodMillis（30 分钟）与
+   * App 启动 / 改主题时的主动刷新会补上。
+   */
+  override fun onReceive(context: Context, intent: Intent) {
+    super.onReceive(context, intent)
+    if (intent.action != Intent.ACTION_CONFIGURATION_CHANGED) {
+      return
+    }
+    val manager = AppWidgetManager.getInstance(context)
+    val ids = manager.getAppWidgetIds(ComponentName(context, javaClass))
+    if (ids.isNotEmpty()) {
+      onUpdate(context, manager, ids, HomeWidgetPlugin.getData(context))
     }
   }
 
